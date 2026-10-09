@@ -1,0 +1,15 @@
+# model  dtype  batch   (L2-L5 run on every line; L6 uses Pythia checkpoints)
+EleutherAI/pythia-70m      float32  64
+EleutherAI/pythia-160m     float32  64
+EleutherAI/pythia-410m     float32  64
+EleutherAI/pythia-1b       bfloat16 32
+EleutherAI/pythia-1.4b     bfloat16 32
+EleutherAI/pythia-2.8b     bfloat16 16
+EleutherAI/pythia-6.9b     bfloat16 8
+gpt2                       float32  64
+gpt2-medium                float32  64
+gpt2-large                 float32  32
+gpt2-xl                    bfloat16 16
+Qwen/Qwen2.5-0.5B          bfloat16 32
+Qwen/Qwen2.5-1.5B          bfloat16 16
+Qwen/Qwen2.5-7B            bfloat16 8

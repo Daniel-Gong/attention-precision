@@ -47,3 +47,33 @@ weights.
 **Note on the workshop data.** The original generator only rejected accidental matches
 at positions after N, so a few true matches at position N are labelled as non-matches
 (0.1–0.2% of positions). The new generator labels every position exactly.
+
+## Running on Misha
+
+One-time setup on a login node:
+
+```bash
+git clone https://github.com/Daniel-Gong/attention-precision && cd attention-precision
+bash scripts/misha_setup.sh            # conda env "ap", installs requirements, runs tests
+```
+
+Toy-model experiments (Phase 1, CPU, `day` partition, 246 array tasks):
+
+```bash
+bash scripts/slurm/launch_phase1.sh
+# when done:
+bash scripts/merge_results.sh && git add results && git commit -m "Phase 1 results" && git push
+```
+
+LLM studies (GPU, `qos_yildirim`, one task per model in `configs/llm_models.txt`):
+
+```bash
+sbatch --array=0-13 scripts/slurm/llm_array.sh behave      # L1 tokenization + L2 behaviour
+sbatch --array=0-13 scripts/slurm/llm_array.sh heads       # L3 head localization
+sbatch --array=0-13 scripts/slurm/llm_array.sh intervene   # L5, after L3 finishes
+sbatch --array=0-19 scripts/slurm/pythia_ckpts.sh          # L6 training checkpoints
+```
+
+Models download to `$HF_HOME` (default `~/project/hf_cache`). LLM attention control
+(`src/ap/llm/hooks.py`) registers a custom attention implementation, `ap_eager`, tested to
+match stock eager attention on GPT-2, GPT-NeoX and Qwen2 configurations.
