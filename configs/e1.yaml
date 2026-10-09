@@ -1,0 +1,10 @@
+# E1: convergence replication. Paper's model on fresh data, trained until val loss plateaus.
+name: e1
+regime: fresh
+max_steps: 30000
+patience: 2000
+eval_every: 250
+batch_size: 32
+lr: 1.0e-4
+model: {d_model: 512, n_layers: 1, n_heads: 1, pe: learned, residual: false, ffn: false, ln: false}
+save_ckpt: runs/e1
