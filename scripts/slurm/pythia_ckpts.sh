@@ -13,6 +13,7 @@ MODELS=(EleutherAI/pythia-160m EleutherAI/pythia-1.4b)
 STEPS=(0 512 1000 2000 4000 8000 16000 33000 66000 143000)
 M=${MODELS[$((SLURM_ARRAY_TASK_ID / 10))]}; S=${STEPS[$((SLURM_ARRAY_TASK_ID % 10))]}
 set +u; module load miniconda; conda activate ap; set -u   # conda scripts read unset variables
+python -c "import torch, sys; ok = torch.cuda.is_available(); print('torch', torch.__version__, 'cuda', torch.version.cuda, 'gpu ok' if ok else 'NO GPU'); sys.exit(0 if ok else 1)"
 export HF_HOME=${HF_HOME:-$HOME/project/hf_cache}
 mkdir -p results/parts logs
 TAG=$(echo "$M" | tr '/' '_')_step$S

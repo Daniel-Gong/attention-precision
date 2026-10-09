@@ -15,6 +15,7 @@ STUDY=$1; shift
 LINE=$(grep -v '^#' configs/llm_models.txt | sed -n "$((SLURM_ARRAY_TASK_ID + 1))p")
 read -r MODEL DTYPE BATCH <<< "$LINE"
 set +u; module load miniconda; conda activate ap; set -u   # conda scripts read unset variables
+python -c "import torch, sys; ok = torch.cuda.is_available(); print('torch', torch.__version__, 'cuda', torch.version.cuda, 'gpu ok' if ok else 'NO GPU'); sys.exit(0 if ok else 1)"
 export HF_HOME=${HF_HOME:-$HOME/project/hf_cache}
 mkdir -p results/parts logs
 TAG=$(echo "$MODEL" | tr '/' '_')
