@@ -3,6 +3,7 @@
 # 37 submissions, 246 array tasks, 2 CPUs each (fits the 512-CPU per-user limit on `day`).
 # Run from the repo root on a Misha login node, after scripts/misha_setup.sh.
 set -euo pipefail
+mkdir -p logs results/parts
 A=scripts/slurm/train_array.sh
 NS="1 2 3 4 5 6"
 sub() { local tag=$1 cfg=$2 spt=$3 nb=$4; shift 4
