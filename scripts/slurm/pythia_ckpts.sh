@@ -3,7 +3,6 @@
 #   sbatch --array=0-19 scripts/slurm/pythia_ckpts.sh      # 2 models x 10 checkpoints
 #SBATCH --job-name=ap-l6
 #SBATCH --partition=gpu
-#SBATCH --qos=qos_yildirim
 #SBATCH --gpus=h100:1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=32G

@@ -5,7 +5,6 @@
 #   sbatch --array=0-13 scripts/slurm/llm_array.sh intervene     # L5 (needs results/l3.jsonl)
 #SBATCH --job-name=ap-llm
 #SBATCH --partition=gpu
-#SBATCH --qos=qos_yildirim
 #SBATCH --gpus=h100:1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=48G
