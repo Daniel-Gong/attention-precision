@@ -124,3 +124,25 @@ def test_controls():
         m(x, c2); base = AttnControl(record=True); m(x, base)
     assert torch.allclose(c2.store["attn"][0][:, 0], base.store["attn"][0][:, 0])   # head 0 untouched
     assert not torch.allclose(c2.store["attn"][0][:, 1], base.store["attn"][0][:, 1])
+
+
+# ---------------- recurrent baselines ----------------
+from ap.models.recurrent import FAMILIES, RecurrentConfig, RecurrentModel
+
+
+@pytest.mark.parametrize("fam", FAMILIES)
+def test_recurrent_causal(fam):
+    torch.manual_seed(0)
+    m = RecurrentModel(RecurrentConfig(family=fam, d_model=32, state=16)).eval()
+    x = torch.randint(0, 20, (4, 24))
+    y = x.clone(); y[:, 15:] = (y[:, 15:] + 1) % 20
+    with torch.no_grad():
+        assert m(x).shape == (4, 24, 2)
+        assert torch.allclose(m(x)[:, :15], m(y)[:, :15], atol=1e-5)
+
+
+def test_train_smoke(tmp_path):
+    from ap.train import TrainConfig, run
+    for model in ({"d_model": 32, "pe": "rope", "residual": True}, {"family": "lstm", "d_model": 32, "state": 16, "pe": "learned"}):
+        row = run(TrainConfig(n=2, model=model, max_steps=40, eval_every=20, n_val=50, n_test=50, threads=1), 0)
+        assert row["steps"] >= 20 and 0 <= row["best_natural"]["acc"] <= 1

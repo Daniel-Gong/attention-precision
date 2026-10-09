@@ -1,0 +1,10 @@
+# Base for E3-E9 sweeps: the paper's architecture at d_model = 128, trained to convergence on fresh data.
+# Each experiment varies one thing through --set (see scripts/slurm/launch_phase1.sh).
+name: sweep
+regime: fresh
+max_steps: 30000
+patience: 2000
+eval_every: 250
+batch_size: 32
+lr: 1.0e-4
+model: {d_model: 128, n_layers: 1, n_heads: 1, pe: learned, residual: false, ffn: false, ln: false}

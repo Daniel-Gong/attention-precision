@@ -28,6 +28,7 @@ import yaml
 from ap.data import GenConfig, generate, load_workshop
 from ap.metrics import attention_stats, behaviour
 from ap.models.attn import AttnControl, AttnModel, ModelConfig, n_params
+from ap.models.recurrent import FAMILIES, RecurrentConfig, RecurrentModel
 
 
 @dataclass
@@ -82,8 +83,14 @@ def run(cfg: TrainConfig, seed: int) -> dict:
     torch.set_num_threads(cfg.threads)
     torch.manual_seed(seed)
     rng = np.random.default_rng(10_000 + seed)
-    mcfg = ModelConfig(**{"max_len": cfg.length, **cfg.model})
-    model = AttnModel(mcfg)
+    if cfg.model.get("family", "attn") in FAMILIES:
+        keep = RecurrentConfig.__dataclass_fields__
+        mcfg = RecurrentConfig(**{"max_len": cfg.length, **{k: v for k, v in cfg.model.items() if k in keep}})
+        model = RecurrentModel(mcfg)
+    else:
+        keep = ModelConfig.__dataclass_fields__
+        mcfg = ModelConfig(**{"max_len": cfg.length, **{k: v for k, v in cfg.model.items() if k in keep}})
+        model = AttnModel(mcfg)
     opt_cls = torch.optim.AdamW if cfg.weight_decay > 0 else torch.optim.Adam
     opt = opt_cls(model.parameters(), lr=cfg.lr, weight_decay=cfg.weight_decay)
     ce = nn.CrossEntropyLoss()
