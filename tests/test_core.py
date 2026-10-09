@@ -146,3 +146,31 @@ def test_train_smoke(tmp_path):
     for model in ({"d_model": 32, "pe": "rope", "residual": True}, {"family": "lstm", "d_model": 32, "state": 16, "pe": "learned"}):
         row = run(TrainConfig(n=2, model=model, max_steps=40, eval_every=20, n_val=50, n_test=50, threads=1), 0)
         assert row["steps"] >= 20 and 0 <= row["best_natural"]["acc"] <= 1
+
+
+# ---------------- circuits ----------------
+def test_qk_terms_reconstruct_logits():
+    from ap.circuits import qk_terms, ov_readout, term_variance_shares
+    torch.manual_seed(0)
+    m = AttnModel(ModelConfig(d_model=32, n_heads=2)).eval()
+    x = torch.randint(0, 20, (3, 24))
+    c = AttnControl(record=True)
+    with torch.no_grad():
+        m(x, c)
+    T = qk_terms(m)
+    xi = x.numpy()
+    for h in range(2):
+        rec = T["EE"][h][xi[:, :, None], xi[:, None, :]] + T["EP"][h][xi][:, :, :] + \
+              T["PE"][h][:, xi].transpose(1, 0, 2) + T["PP"][h][None]
+        got = c.store["logits"][0][:, h].numpy()
+        vis = np.tril(np.ones((24, 24), bool))
+        assert np.allclose(rec[:, vis], got[:, vis], atol=1e-4)
+    shares = term_variance_shares(T, xi, head=0)
+    assert abs(sum(shares.values()) - 1) < 1e-6
+    m1 = AttnModel(ModelConfig(d_model=32)).eval()
+    c1 = AttnControl(record=True)
+    with torch.no_grad():
+        out = m1(x, c1)
+    r = ov_readout(m1); A = c1.store["attn"][0][:, 0].numpy()
+    pred = (A * (r["cE"][xi][:, None, :] + r["cP"][None, None, :])).sum(-1) + r["c0"]
+    assert np.allclose(pred, (out[..., 1] - out[..., 0]).numpy(), atol=1e-4)
