@@ -14,7 +14,7 @@ set -euo pipefail
 STUDY=$1; shift
 LINE=$(grep -v '^#' configs/llm_models.txt | sed -n "$((SLURM_ARRAY_TASK_ID + 1))p")
 read -r MODEL DTYPE BATCH <<< "$LINE"
-module load miniconda; conda activate ap
+set +u; module load miniconda; conda activate ap; set -u   # conda scripts read unset variables
 export HF_HOME=${HF_HOME:-$HOME/project/hf_cache}
 mkdir -p results/parts logs
 TAG=$(echo "$MODEL" | tr '/' '_')
