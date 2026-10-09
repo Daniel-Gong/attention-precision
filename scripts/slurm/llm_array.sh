@@ -6,7 +6,7 @@
 #SBATCH --job-name=ap-llm
 #SBATCH --partition=gpu
 #SBATCH --qos=qos_yildirim
-#SBATCH --gpus=1
+#SBATCH --gpus=h100:1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=48G
 #SBATCH --time=12:00:00

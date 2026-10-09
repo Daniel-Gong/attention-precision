@@ -65,7 +65,7 @@ bash scripts/slurm/launch_phase1.sh
 bash scripts/merge_results.sh && git add results && git commit -m "Phase 1 results" && git push
 ```
 
-LLM studies (GPU, `qos_yildirim`, one task per model in `configs/llm_models.txt`):
+LLM studies (GPU, one H100 per task under `qos_yildirim`, one task per model in `configs/llm_models.txt`):
 
 ```bash
 sbatch --array=0-13 scripts/slurm/llm_array.sh behave      # L1 tokenization + L2 behaviour
