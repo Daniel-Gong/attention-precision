@@ -29,6 +29,7 @@ STUDY = {  # study -> (module, output prefix, extra args)
     "locate": ("ap.llm.locate", "l7", ["--l3", "/tmp/l3.jsonl", "--l2", "/tmp/l2.jsonl", "--ns", "2", "3", "4"]),
     "heads": ("ap.llm.heads", "l3", ["--ns", "1", "2", "3", "4"]),
     "behave": ("ap.llm.behave", "l2", []),
+    "suppress": ("ap.llm.suppress", "l5s", []),
 }
 
 
@@ -40,7 +41,7 @@ def _run(study, model, dtype, batch, l3_text, l2_text, extra):
     open("/tmp/l3.jsonl", "w").write(l3_text)
     open("/tmp/l2.jsonl", "w").write(l2_text)
     cmd = ["python", "-m", mod, "--model", model, "--dtype", dtype, "--out", "/tmp/out.jsonl", *args, *extra]
-    if study in ("intervene", "behave"):
+    if study in ("intervene", "behave", "suppress"):
         cmd += ["--batch", str(batch)]
     env = {**os.environ, "PYTHONPATH": "/root/src", "HF_HOME": "/cache"}
     p = subprocess.run(cmd, env=env, capture_output=True, text=True)
@@ -53,6 +54,11 @@ def _run(study, model, dtype, batch, l3_text, l2_text, extra):
 
 @app.function(gpu="H100", timeout=12 * 3600, volumes={"/cache": hf})
 def run_big(*a):
+    return _run(*a)
+
+
+@app.function(gpu="B200", timeout=12 * 3600, volumes={"/cache": hf})
+def run_best(*a):
     return _run(*a)
 
 
@@ -115,7 +121,7 @@ def toy(tag: str, sets: str, ns: str = "1 2 3 4 5 6", seeds: str = "0-9", config
 @app.local_entrypoint()
 def main(study: str = "intervene", models: str = "", model_list: str = "configs/llm_models.txt", extra: str = "",
          gpu: str = "auto", split_ns: str = "", tag: str = ""):
-    """gpu: auto (H100 for 6B+ models, L40S otherwise) | big (H100 for all) | small.
+    """gpu: auto (H100 for 6B+ models, L40S otherwise) | big (H100 for all) | best (B200, batch x4) | small.
     split_ns: e.g. "2 3" runs one container per N (passes --ns <n>) for each model.
     tag: output goes to results/parts/<prefix>_<tag>_<model>.jsonl (rows carry the model name, so
     duplicates across runs are removed at analysis time)."""
@@ -130,13 +136,16 @@ def main(study: str = "intervene", models: str = "", model_list: str = "configs/
     for m, dtype, batch in rows:
         if want is not None and m not in want:
             continue
-        if study in ("intervene", "locate") and m not in done_l3:
+        if study in ("intervene", "locate") and m not in done_l3:   # suppress needs no L3 heads
             print(f"skip {m}: no L3 results yet")
             continue
         for n in (split_ns.split() or [None]):
             jobs.append((m, dtype, int(batch), extra.split() + (["--ns", n] if n else [])))
     print(f"launching {study} on Modal: {len(jobs)} containers")
-    pick = lambda m: run_big if gpu == "big" or (gpu == "auto" and big(m)) else run_small
+    pick = lambda m: (run_best if gpu == "best" else
+                      run_big if gpu == "big" or (gpu == "auto" and big(m)) else run_small)
+    if gpu == "best":
+        jobs = [(m, d, b * 4, ex) for m, d, b, ex in jobs]
     calls = [pick(m).spawn(study, m, d, b, l3, l2, ex) for m, d, b, ex in jobs]
     prefix = STUDY[study][1] + (f"_{tag}" if tag else "")
     os.makedirs("results/parts", exist_ok=True); os.makedirs("logs", exist_ok=True)

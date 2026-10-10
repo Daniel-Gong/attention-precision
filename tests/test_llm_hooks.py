@@ -117,7 +117,9 @@ def test_patching_all_heads_recovers_clean():
     torch.manual_seed(1)
     for cfg in (GPT2Config(vocab_size=64, n_positions=1024, n_embd=32, n_layer=2, n_head=4),
                 Qwen2Config(vocab_size=64, hidden_size=32, num_hidden_layers=2, num_attention_heads=4,
-                            num_key_value_heads=2, intermediate_size=64, max_position_embeddings=1024)):
+                            num_key_value_heads=2, intermediate_size=64, max_position_embeddings=1024),
+                GPTNeoXConfig(vocab_size=64, hidden_size=32, num_hidden_layers=2, num_attention_heads=4,
+                              intermediate_size=64, max_position_embeddings=1024)):
         model = AutoModelForCausalLM.from_config(cfg, attn_implementation="ap_eager").eval()
         n = 3
         demos, _, (x, t, l) = make_sets(n, 6, 1, 1)
@@ -223,3 +225,45 @@ def test_chat_builder_and_scoring():
                                              attn_implementation="ap_eager").eval()
     sc = score(model, tok, 2, x, t, demos, "feedback", batch=2, builder=build_chat)
     assert sc.shape == x.shape and np.isfinite(sc).all()
+
+
+def test_suppress_on_random_model(tmp_path):
+    import numpy as np
+    from ap.llm import suppress as S
+    from ap.llm.behave import make_sets
+    from ap.llm.prompts import build
+    tok = FakeTok()
+    torch.manual_seed(0)
+    for cfg in (GPT2Config(vocab_size=64, n_positions=1024, n_embd=32, n_layer=2, n_head=4),
+                Qwen2Config(vocab_size=64, hidden_size=32, num_hidden_layers=2, num_attention_heads=4,
+                            num_key_value_heads=2, intermediate_size=64, max_position_embeddings=1024),
+                GPTNeoXConfig(vocab_size=64, hidden_size=32, num_hidden_layers=2, num_attention_heads=4,
+                              intermediate_size=64, max_position_embeddings=1024)):
+        model = AutoModelForCausalLM.from_config(cfg, attn_implementation="ap_eager").eval()
+        n = 2
+        demos, (xc, tc, lc), (x, t, l) = make_sets(n, 4, 8, 1)
+        spaces = S.fit_subspaces(model, tok, n, xc, tc, demos, "cpu", batch=4)
+        assert len(spaces) == 3 and spaces[1][1].shape == (32, 19)
+        U = spaces[1][1]
+        assert torch.allclose(U.T @ U, torch.eye(19), atol=1e-4)
+        sup = S.Suppressor(model, spaces, 1.0)
+        try:
+            base = S.score_cond(model, tok, n, x, t, demos, "cpu", sup, "baseline", 4)
+            # per-prefix scoring equals one full-sequence pass when nothing is suppressed
+            built = [build(tok, n, x[b], t[b], demos) for b in range(len(x))]
+            with torch.no_grad():
+                lg = model(torch.tensor([b.ids for b in built])).logits
+            lp = built[0].letter_pos
+            full = (lg[:, lp, built[0].m_id] - lg[:, lp, built[0].dash_id]).numpy()
+            assert np.allclose(base[:, n:], full[:, n:], atol=1e-4)
+            dis = S.score_cond(model, tok, n, x, t, demos, "cpu", sup, "distractors", 4)
+            assert not np.allclose(dis[:, n + 2:], base[:, n + 2:])
+            assert sup.mask is None
+        finally:
+            sup.remove()
+        # hooks removed: model back to baseline
+        with torch.no_grad():
+            assert torch.allclose(model(torch.tensor([built[0].ids])).logits, lg[:1], atol=1e-5)
+    assert S.suppressed_items("distractors", 5, 2) == [0, 1, 2, 4]
+    assert S.suppressed_items("lures", 5, 2) == [2, 4]
+    assert S.suppressed_items("target", 5, 2) == [3]
