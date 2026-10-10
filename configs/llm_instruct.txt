@@ -1,0 +1,4 @@
+# model  dtype  batch   (chat-format condition; compare with Gong et al. 2024)
+Qwen/Qwen2.5-0.5B-Instruct  bfloat16 32
+Qwen/Qwen2.5-1.5B-Instruct  bfloat16 16
+Qwen/Qwen2.5-7B-Instruct    bfloat16 8

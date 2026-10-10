@@ -159,3 +159,65 @@ def test_intervene_arms_on_random_model(tmp_path):
     sharp = I.run_arm(model, tok, n, (cal, test), demos, "cpu", {"temps": {h: 0.5 for h in top}}, 4)
     abl = I.run_arm(model, tok, n, (cal, test), demos, "cpu", {"ablate": {h: means[h] for h in top}}, 4)
     assert all("dprime" in r for r in (base, sharp, abl))
+
+
+def test_locate_pipeline_on_random_model(tmp_path):
+    import json
+    import numpy as np
+    from ap.llm import locate as Lc
+    from ap.llm.behave import make_sets
+    tok = FakeTok()
+    torch.manual_seed(0)
+    model = AutoModelForCausalLM.from_config(GPT2Config(vocab_size=64, n_positions=1024, n_embd=32, n_layer=2, n_head=4),
+                                             attn_implementation="ap_eager").eval()
+    n = 2
+    (tmp_path / "l3.jsonl").write_text(json.dumps({"model": "m", "n": 2, "revision": None,
+                                                   "patch_top": {"1.2": 0.5, "0.1": 0.2, "1.0": float("nan")}}) + "\n")
+    (tmp_path / "l2.jsonl").write_text(json.dumps({"model": "m", "n": 2, "condition": "feedback", "threshold": 0.0}) + "\n")
+    heads = Lc.top_heads(str(tmp_path / "l3.jsonl"), "m", 2, 5)
+    assert heads == [(1, 2), (0, 1)]
+    demos, _, (x, t, l) = make_sets(n, 12, 4, 1)
+    sc, at, al, outs = Lc.collect(model, tok, n, x, t, demos, heads, "cpu", batch=4)
+    assert sc.shape == x.shape and at.shape == (12, 24 - n, 2) and outs.shape == (12, 24 - n, 2 * 8)
+    res = Lc.analyse(n, x, t, l, sc, at, al, outs, 0.0)
+    split = res["error_split"]
+    if res["n_errors"]:
+        assert abs(sum(split.values()) - 1) < 1e-6
+
+
+class FakeChatTok(FakeTok):
+    """Adds a minimal chat template: <u> content <a> answer ..."""
+    def __init__(self):
+        super().__init__()
+        for k in ("<u>", "<a>", "m", "-"):
+            self.vocab.setdefault(k, len(self.vocab) + 3)
+    def encode(self, s, add_special_tokens=False):
+        if s in ("m", "-"):
+            return [self.vocab[s]]
+        return super().encode(s)
+    def apply_chat_template(self, msgs, add_generation_prompt=False, tokenize=True):
+        ids = []
+        for m in msgs:
+            if m["role"] == "user":
+                ids += [self.vocab["<u>"]] + super().encode(m["content"])
+            else:
+                ids += [self.vocab["<a>"], self.vocab[m["content"]]]
+        if add_generation_prompt:
+            ids += [self.vocab["<a>"]]
+        return ids
+
+
+def test_chat_builder_and_scoring():
+    import numpy as np
+    from ap.llm.behave import make_sets, score
+    from ap.llm.prompts import build_chat
+    tok = FakeChatTok()
+    demos, _, (x, t, l) = make_sets(2, 4, 2, 1)
+    b = build_chat(tok, 2, x[0], t[0])
+    assert len(b.letter_pos) == 24
+    assert [b.ids[p + 1] == b.m_id for p in b.letter_pos] == list(t[0].astype(bool))
+    torch.manual_seed(0)
+    model = AutoModelForCausalLM.from_config(GPT2Config(vocab_size=80, n_positions=2048, n_embd=32, n_layer=2, n_head=4),
+                                             attn_implementation="ap_eager").eval()
+    sc = score(model, tok, 2, x, t, demos, "feedback", batch=2, builder=build_chat)
+    assert sc.shape == x.shape and np.isfinite(sc).all()

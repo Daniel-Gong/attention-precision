@@ -22,7 +22,7 @@ import torch
 
 from ap.data import GenConfig, generate
 from ap.llm.hooks import load
-from ap.llm.prompts import build, k_back_labels, tokenization_report
+from ap.llm.prompts import build, build_chat, k_back_labels, tokenization_report
 from ap.metrics import auc, behaviour
 
 
@@ -36,7 +36,7 @@ def make_sets(n, n_seq, n_cal, n_demo, length=24, seed=0):
 
 
 @torch.no_grad()
-def score(model, tok, n, x, t, demos, condition="feedback", batch=32, device="cpu"):
+def score(model, tok, n, x, t, demos, condition="feedback", batch=32, device="cpu", builder=None):
     """Returns scores (B, L): logit(m) - logit(-) at each item's letter token."""
     out = np.zeros(x.shape, dtype=np.float32)
     for s in range(0, len(x), batch):
@@ -44,7 +44,7 @@ def score(model, tok, n, x, t, demos, condition="feedback", batch=32, device="cp
         answers = ts.copy() if condition == "feedback" else np.zeros_like(ts)
         steps = [None] if condition == "feedback" else range(x.shape[1])
         for step in steps:
-            built = [build(tok, n, xs[b], answers[b], demos) for b in range(len(xs))]
+            built = [(builder or build)(tok, n, xs[b], answers[b], demos) for b in range(len(xs))]
             ids = torch.tensor([b.ids for b in built], device=device)
             logits = model(ids).logits.float()
             pos = torch.tensor(built[0].letter_pos, device=device)
@@ -89,6 +89,7 @@ def main():
     p.add_argument("--out", default="results/l2.jsonl")
     p.add_argument("--save-scores", default="")
     p.add_argument("--report-tokenization", action="store_true")
+    p.add_argument("--chat", action="store_true", help="chat-format prompts for instruction-tuned models")
     a = p.parse_args()
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model, tok = load(a.model, dtype=getattr(torch, a.dtype), device=device, revision=a.revision)
@@ -100,10 +101,12 @@ def main():
         demos, (xc, tc, lc), (x, t, l) = make_sets(n, a.n_seq, a.n_cal, a.n_demo)
         for cond in a.conditions:
             t0 = time.time()
-            scc = score(model, tok, n, xc, tc, demos, cond, a.batch, device)
-            sc = score(model, tok, n, x, t, demos, cond, a.batch, device)
+            bld = build_chat if a.chat else None
+            scc = score(model, tok, n, xc, tc, demos, cond, a.batch, device, bld)
+            sc = score(model, tok, n, x, t, demos, cond, a.batch, device, bld)
             thr = calibrate(scc, tc, n)
             row = {"model": a.model, "revision": a.revision, "n": n, "condition": cond, "threshold": thr,
+                   "format": "chat" if a.chat else "lines",
                    **behaviour(sc, t, l, n, threshold=thr), "auc_raw": auc(sc[:, n:].ravel(), t[:, n:].ravel()),
                    **drift(sc, x, thr, n), "seconds": round(time.time() - t0, 1)}
             with open(a.out, "a") as f:

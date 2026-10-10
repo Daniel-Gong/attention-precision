@@ -81,3 +81,30 @@ def k_back_labels(seq: np.ndarray, k: int) -> np.ndarray:
     t = np.zeros(len(seq), dtype=bool)
     t[k:] = seq[k:] == seq[:-k]
     return t
+
+
+CHAT_INSTRUCTION = ("We will play an N-back game with N = {n}. I will show you letters one at a time. "
+                    "Reply m if the letter is the same as the letter {n} steps back, otherwise reply -. "
+                    "Reply with a single character only.")
+
+
+def build_chat(tok, n: int, test_seq: np.ndarray, test_answers: np.ndarray, demos=None, bos: bool = True) -> Built:
+    """Chat-format prompt for instruction-tuned models (after Gong et al. 2024): one user turn
+    per letter, one assistant turn per answer. `letter_pos[i]` is the token whose next-token
+    logits give the answer to item i. Demonstrations are not used in this format."""
+    m_id, dash_id = single(tok, "m"), single(tok, "-")
+    msgs = [{"role": "user", "content": CHAT_INSTRUCTION.format(n=n) + "\n\n" + ALPHABET[int(test_seq[0])]}]
+    pos = []
+    for i, (c, a) in enumerate(zip(test_seq, test_answers)):
+        if i > 0:
+            msgs.append({"role": "user", "content": ALPHABET[int(c)]})
+        prefix = tok.apply_chat_template(msgs, add_generation_prompt=True, tokenize=True)
+        prefix = list(prefix if isinstance(prefix, list) else prefix["input_ids"])
+        pos.append(len(prefix) - 1)
+        msgs.append({"role": "assistant", "content": "m" if a else "-"})
+    full = tok.apply_chat_template(msgs, tokenize=True)
+    full = list(full if isinstance(full, list) else full["input_ids"])
+    for p in pos:                                   # each answer token sits right after its prefix
+        if full[p + 1] not in (m_id, dash_id):
+            raise ValueError("chat template splits the answer token; cannot locate answer slots")
+    return Built(full, pos, m_id, dash_id)
