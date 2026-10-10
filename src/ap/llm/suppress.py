@@ -100,19 +100,23 @@ def fit_subspaces(model, tok, n, x, t, demos, device, batch=16):
 
 class Suppressor:
     """Forward hooks that remove the letter subspace at masked positions of every residual site."""
-    def __init__(self, model, spaces, alpha=1.0):
+    def __init__(self, model, spaces, alpha=1.0, sites=None):
         self.layers, self.spaces, self.alpha, self.mask = decoder_layers(model), spaces, alpha, None
+        self.sites = sites                     # None = every site
         self.handles = [self.layers[0].register_forward_pre_hook(self._pre, with_kwargs=True)]
         for li, layer in enumerate(self.layers):
             self.handles.append(layer.register_forward_hook(self._make_post(li + 1)))
 
     def _edit(self, h, site):
-        if self.mask is None or self.alpha == 0:
+        if self.mask is None or self.alpha == 0 or (self.sites is not None and site not in self.sites):
             return h
         mu, U = self.spaces[site]
         mu, U = mu.to(h.dtype), U.to(h.dtype)
         proj = ((h - mu) @ U) @ U.T
-        return h - self.alpha * proj * self.mask[..., None].to(h.dtype)
+        m = self.mask[..., None].to(h.dtype)
+        if m.dim() == 2:                       # (T, 1): same positions in every row
+            m = m[: h.shape[1]]
+        return h - self.alpha * proj * m
 
     def _pre(self, module, args, kwargs):
         if args:
@@ -174,6 +178,42 @@ def score_cond(model, tok, n, x, t, demos, device, sup, cond, batch=32):
     return out
 
 
+def xiong_sweep(model, tok, n, cal, test, demos, device, spaces, batch, n_dirs=5, alphas=(0.3, 0.5, 1.0)):
+    """Replication of Xiong et al. (2026, App. A.5.13): one letter-identity principal direction at
+    one of the two earliest depths, applied only at the positions that produce answers (here each
+    test item's letter token), h <- h - alpha (proj_B(h) - mu_proj). One full pass per sequence, so
+    earlier edited positions stay in context, as in their turn-by-turn evaluation. Unlike their
+    best-in-sweep summary, the configuration is also chosen on calibration sequences and scored on
+    held-out test sequences."""
+    from ap.llm.behave import score
+    nl = len(decoder_layers(model))
+    depths = sorted({max(1, round(0.1 * nl)), max(2, round(0.25 * nl))})   # sites = outputs of these layers
+    (xc, tc, lc), (x, t, l) = cal, test
+    lp = build(tok, n, x[0], t[0], demos).letter_pos
+    rows = []
+    for site in depths:
+        mu, U = spaces[site]
+        for k in range(n_dirs):
+            one = [None] * len(spaces)
+            one[site] = (mu, U[:, k:k + 1].contiguous())
+            for a in alphas:
+                sup = Suppressor(model, one, a, sites={site})
+                T = len(build(tok, n, x[0], t[0], demos).ids)
+                m = torch.zeros(T, dtype=torch.bool, device=device)
+                m[torch.as_tensor(lp, device=device)] = True
+                sup.mask = m
+                try:
+                    scc = score(model, tok, n, xc, tc, demos, "feedback", batch, device)
+                    sc = score(model, tok, n, x, t, demos, "feedback", batch, device)
+                finally:
+                    sup.remove()
+                thr = calibrate(scc, tc, n)
+                rows.append({"cond": "xiong", "site": site, "dir": k, "alpha": a,
+                             "cal_dprime": behaviour(scc, tc, lc, n, threshold=thr)["dprime"],
+                             **behaviour(sc, t, l, n, threshold=thr)})
+    return rows
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--model", required=True)
@@ -191,7 +231,28 @@ def main():
     for n in a.ns:
         demos, (xc, tc, lc), (x, t, l) = make_sets(n, a.n_seq, 200, 3)
         spaces = fit_subspaces(model, tok, n, xc, tc, demos, device)
+        if "xiong" in a.conds:
+            from ap.llm.behave import score
+            base_c = score(model, tok, n, xc, tc, demos, "feedback", a.batch, device)
+            base_t = score(model, tok, n, x, t, demos, "feedback", a.batch, device)
+            thr = calibrate(base_c, tc, n)
+            b = behaviour(base_t, t, l, n, threshold=thr)
+            bc = behaviour(base_c, tc, lc, n, threshold=thr)["dprime"]
+            rows = xiong_sweep(model, tok, n, (xc, tc, lc), (x, t, l), demos, device, spaces, a.batch)
+            pick = max(rows, key=lambda r: r["cal_dprime"])
+            summ = [{"cond": "xiong_baseline", "cal_dprime": bc, **b},
+                    {"cond": "xiong_heldout", **{k: pick[k] for k in ("site", "dir", "alpha", "cal_dprime")},
+                     **{k: v for k, v in pick.items() if k not in ("cond", "site", "dir", "alpha", "cal_dprime")}},
+                    {"cond": "xiong_best_in_sweep", **max(rows, key=lambda r: r["dprime"]), "note": "selected on test"}]
+            summ[2]["cond"] = "xiong_best_in_sweep"
+            with open(a.out, "a") as f:
+                for r in rows + summ:
+                    f.write(json.dumps({"model": a.model, "n": n, **r}) + "\n")
+            print(f"{a.model} N={n} xiong: base d'={b['dprime']:.3f} heldout={summ[1]['dprime']:.3f} "
+                  f"best-in-sweep={summ[2]['dprime']:.3f}", flush=True)
         for spec in a.conds:
+            if spec == "xiong":
+                continue
             cond, _, alpha = spec.partition(":")
             alpha = float(alpha or 1.0)
             sup = Suppressor(model, random_spaces(spaces) if cond == "random" else spaces, alpha)

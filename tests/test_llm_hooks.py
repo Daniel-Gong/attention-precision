@@ -267,3 +267,17 @@ def test_suppress_on_random_model(tmp_path):
     assert S.suppressed_items("distractors", 5, 2) == [0, 1, 2, 4]
     assert S.suppressed_items("lures", 5, 2) == [2, 4]
     assert S.suppressed_items("target", 5, 2) == [3]
+
+
+def test_xiong_sweep_runs():
+    from ap.llm import suppress as S
+    from ap.llm.behave import make_sets
+    tok = FakeTok()
+    torch.manual_seed(0)
+    model = AutoModelForCausalLM.from_config(GPT2Config(vocab_size=64, n_positions=1024, n_embd=32, n_layer=4, n_head=4),
+                                             attn_implementation="ap_eager").eval()
+    n = 2
+    demos, cal, test = make_sets(n, 4, 6, 1)
+    spaces = S.fit_subspaces(model, tok, n, cal[0], cal[1], demos, "cpu", batch=4)
+    rows = S.xiong_sweep(model, tok, n, cal, test, demos, "cpu", spaces, 4, n_dirs=2, alphas=(1.0,))
+    assert len(rows) == 4 and all("dprime" in r and "cal_dprime" in r for r in rows)
