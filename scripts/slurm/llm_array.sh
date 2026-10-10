@@ -30,11 +30,12 @@ case $STUDY in
     PYTHONPATH=src python -m ap.llm.heads --model "$MODEL" --dtype $DTYPE --ns 1 2 3 4 \
       --out results/parts/l3_${TAG}.jsonl "$@" ;;
   locate)
-    cat results/parts/l3_*.jsonl > results/l3.jsonl; cat results/parts/l2_*.jsonl > results/l2.jsonl
-    PYTHONPATH=src python -m ap.llm.locate --model "$MODEL" --dtype $DTYPE --l3 results/l3.jsonl --l2 results/l2.jsonl \
+    # per-task copies: concurrent tasks rewriting one shared file raced (truncated JSON)
+    L3=$(mktemp); L2=$(mktemp); cat results/parts/l3_*.jsonl > $L3; cat results/parts/l2_*.jsonl > $L2
+    PYTHONPATH=src python -m ap.llm.locate --model "$MODEL" --dtype $DTYPE --l3 $L3 --l2 $L2 \
       --ns 2 3 4 --out results/parts/l7_${TAG}.jsonl "$@" ;;
   intervene)
-    cat results/parts/l3_*.jsonl > results/l3.jsonl
-    PYTHONPATH=src python -m ap.llm.intervene --model "$MODEL" --dtype $DTYPE --batch $BATCH --l3 results/l3.jsonl \
+    L3=$(mktemp); cat results/parts/l3_*.jsonl > $L3
+    PYTHONPATH=src python -m ap.llm.intervene --model "$MODEL" --dtype $DTYPE --batch $BATCH --l3 $L3 \
       --out results/parts/l5_${TAG}.jsonl "$@" ;;
 esac
