@@ -1,0 +1,66 @@
+\begin{tabular}{lrrrrrrr}
+\toprule
+Model & $N$ & base $d'$ & sharpen & ablate top & ablate rand. & suppress & supp. rand. \\
+\midrule
+Pythia-70m & 2 & 1.52 & \textbf{-0.11} & \textbf{-1.71} & \textbf{-1.08} & \textbf{+0.38} & \textbf{-0.30} \\
+ & 3 & 1.40 & \textbf{+0.22} & \textbf{-1.49} & \textbf{-1.28} & \textbf{+0.05} & \textbf{-0.21} \\
+ & 4 & 0.03$^\dagger$ & \textbf{+0.97} & \textbf{-0.17} & +0.04 & \textbf{+0.82} & \textbf{+0.31} \\
+\addlinespace[2pt]
+Pythia-160m & 2 & 1.85 & \textbf{+0.14} & \textbf{-1.62} & +0.01 & \textbf{+1.25} & \textbf{+0.29} \\
+ & 3 & 1.92 & \textbf{-0.17} & \textbf{-1.90} & \textbf{-0.13} & \textbf{+0.30} & +0.03 \\
+ & 4 & 0.96 & \textbf{+0.30} & \textbf{-1.09} & \textbf{-0.20} & \textbf{-0.22} & +0.01 \\
+\addlinespace[2pt]
+Pythia-410m & 2 & 1.76 & \textbf{+0.17} & \textbf{-1.36} & \textbf{-0.03} & \textbf{+0.61} & -0.01 \\
+ & 3 & 1.25 & \textbf{-0.08} & \textbf{-1.18} & \textbf{+0.13} & \textbf{+0.60} & \textbf{-0.04} \\
+ & 4 & 0.53 & \textbf{+0.13} & \textbf{-0.39} & \textbf{+0.08} & \textbf{+0.70} & \textbf{+0.05} \\
+\addlinespace[2pt]
+Pythia-1b & 2 & 2.06 & \textbf{-0.04} & \textbf{-1.81} & \textbf{+0.13} & \textbf{+0.59} & \textbf{-0.05} \\
+ & 3 & 1.46 & \textbf{+0.11} & \textbf{-1.70} & \textbf{+0.34} & \textbf{+0.26} & \textbf{-0.12} \\
+ & 4 & 0.64 & \textbf{+0.09} & \textbf{-0.83} & \textbf{+0.29} & \textbf{+0.39} & \textbf{-0.09} \\
+\addlinespace[2pt]
+Pythia-1.4b & 2 & 2.21 & \textbf{+0.08} & \textbf{-1.61} & \textbf{-0.06} & \textbf{+0.95} & \textbf{-0.05} \\
+ & 3 & 1.36 & \textbf{+0.05} & \textbf{-0.93} & \textbf{+0.05} & \textbf{+0.46} & \textbf{+0.05} \\
+ & 4 & 0.99 & \textbf{+0.05} & \textbf{-0.66} & +0.02 & \textbf{+0.44} & \textbf{-0.07} \\
+\addlinespace[2pt]
+Pythia-2.8b & 2 & 2.10 & \textbf{-0.05} & \textbf{-1.59} & \textbf{-0.12} & \textbf{+0.25} & \textbf{-0.03} \\
+ & 3 & 1.42 & \textbf{+0.12} & \textbf{-1.01} & \textbf{-0.03} & \textbf{+0.34} & -0.01 \\
+ & 4 & 0.94 & \textbf{+0.12} & \textbf{-0.70} & \textbf{+0.02} & \textbf{+0.41} & \textbf{+0.05} \\
+\addlinespace[2pt]
+Pythia-6.9b & 2 & 1.93 & \textbf{+0.03} & \textbf{-1.02} & \textbf{-0.08} & \textbf{+0.94} & \textbf{-0.08} \\
+ & 3 & 1.26 & \textbf{+0.10} & \textbf{-0.34} & \textbf{+0.26} & \textbf{+1.47} & \textbf{+0.13} \\
+ & 4 & 1.07 & \textbf{+0.07} & \textbf{-0.55} & +0.03 & \textbf{+1.13} & \textbf{+0.09} \\
+\addlinespace[2pt]
+GPT-2 & 2 & 2.08 & \textbf{-0.30} & \textbf{-2.20} & \textbf{-0.09} & \textbf{+0.05} & \textbf{-0.22} \\
+ & 3 & 1.28 & -0.00 & \textbf{-1.12} & \textbf{-0.09} & \textbf{+0.71} & \textbf{-0.07} \\
+ & 4 & 0.87 & \textbf{-0.02} & \textbf{-0.86} & \textbf{+0.07} & \textbf{+0.32} & \textbf{-0.12} \\
+\addlinespace[2pt]
+GPT-2 medium & 2 & 1.92 & +0.02 & \textbf{-1.38} & \textbf{+0.14} & \textbf{+1.05} & +0.00 \\
+ & 3 & 1.35 & \textbf{-0.06} & \textbf{-1.43} & \textbf{-0.10} & \textbf{+0.86} & \textbf{-0.08} \\
+ & 4 & 0.95 & \textbf{-0.07} & \textbf{-0.98} & \textbf{-0.18} & \textbf{+0.34} & \textbf{-0.12} \\
+\addlinespace[2pt]
+GPT-2 large & 2 & 2.24 & \textbf{-0.17} & \textbf{-1.16} & \textbf{-0.09} & \textbf{+0.68} & \textbf{+0.06} \\
+ & 3 & 1.43 & \textbf{+0.15} & \textbf{-0.89} & \textbf{+0.02} & \textbf{+0.77} & \textbf{-0.03} \\
+ & 4 & 0.91 & \textbf{+0.06} & \textbf{-0.50} & \textbf{-0.05} & \textbf{+0.55} & \textbf{-0.03} \\
+\addlinespace[2pt]
+GPT-2 xl & 2 & 1.46 & \textbf{+0.12} & \textbf{-1.24} & \textbf{-0.06} & \textbf{+0.52} & \textbf{+0.15} \\
+ & 3 & 0.94 & \textbf{+0.12} & \textbf{-0.88} & +0.01 & \textbf{+0.81} & \textbf{-0.05} \\
+ & 4 & -0.02$^\dagger$ & \textbf{+0.55} & \textbf{-0.16} & \textbf{+0.53} & \textbf{+0.91} & \textbf{+0.48} \\
+\addlinespace[2pt]
+Qwen2.5-0.5B & 2 & 1.64 & \textbf{-0.03} & \textbf{-0.87} & \textbf{+0.06} & \textbf{+0.49} & \textbf{+0.15} \\
+ & 3 & 1.04 & \textbf{+0.05} & \textbf{-0.65} & \textbf{-0.11} & \textbf{+0.67} & \textbf{-0.07} \\
+ & 4 & 0.64 & -0.01 & \textbf{-0.38} & +0.02 & \textbf{+0.60} & \textbf{-0.09} \\
+\addlinespace[2pt]
+Qwen2.5-1.5B & 2 & 2.18 & \textbf{+0.10} & \textbf{-0.76} & \textbf{+0.06} & \textbf{+0.89} & \textbf{-0.11} \\
+ & 3 & 1.75 & +0.01 & \textbf{-0.93} & \textbf{-0.05} & \textbf{+1.15} & +0.01 \\
+ & 4 & 1.18 & \textbf{-0.04} & \textbf{-0.78} & \textbf{-0.11} & \textbf{+0.28} & \textbf{-0.09} \\
+\addlinespace[2pt]
+Qwen2.5-7B & 2 & 1.53 & +0.01 & \textbf{-0.27} & \textbf{+0.06} & \textbf{+0.41} & \textbf{+0.04} \\
+ & 3 & 1.44 & \textbf{-0.11} & \textbf{-0.29} & -0.02 & \textbf{+0.99} & \textbf{+0.20} \\
+ & 4 & 0.88 & +0.00 & +0.03 & +0.00 & \textbf{+0.63} & \textbf{+0.14} \\
+\addlinespace[2pt]
+Qwen2.5-14B & 2 & 2.42 & -- & -- & -- & \textbf{+0.46} & \textbf{-0.10} \\
+ & 3 & 1.60 & -- & -- & -- & \textbf{+1.78} & \textbf{-0.05} \\
+ & 4 & 1.29 & -- & -- & -- & \textbf{+0.76} & \textbf{+0.18} \\
+\addlinespace[2pt]
+\bottomrule
+\end{tabular}

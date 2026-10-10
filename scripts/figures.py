@@ -175,7 +175,8 @@ def fig4(S, out):
              ("located_probe_right", "attended, lost downstream", C[3]),
              ("mislocated", "attention elsewhere", "#b8b7b1")]
     ns = [2, 3, 4]
-    good = [r for r in S["l7"] if "gpt2-large" not in r["model"] and r.get("split_miss")
+    dedup = {(r["model"], r["n"]): r for r in S["l7"]}          # later rows win (reused-container duplicates)
+    good = [r for r in dedup.values() if "gpt2-large" not in r["model"] and r.get("split_miss")
             and r["split_miss"]["count"] < 0.9 * r["n_items"] * 0.3]
     bottom = np.zeros(len(ns))
     for key, lab, col in parts:
@@ -281,13 +282,58 @@ def fig6(S, out):
     save(fig, out, "fig6_architectures_development")
 
 
+def fig1(S, out):
+    """Schematic: the task, the two accounts, and the answer (numbers from B1 and L8)."""
+    from matplotlib.patches import FancyArrowPatch, FancyBboxPatch
+    fig = plt.figure(figsize=(7.2, 2.5))
+    # a: task
+    ax = fig.add_axes([0.0, 0.08, 0.33, 0.84]); ax.axis("off"); ax.set_xlim(0, 7); ax.set_ylim(0, 4)
+    ax.set_title("a  2-back with a lure", loc="left")
+    letters = ["k", "t", "k", "r", "t", "q", "r"]
+    for j, c in enumerate(letters):
+        col = {4: C[2], 3: C[7]}.get(j, "#f1f0ec")
+        ax.add_patch(FancyBboxPatch((j + 0.12, 2.0), 0.76, 0.9, boxstyle="round,pad=0.02,rounding_size=0.12",
+                                    fc=col if j in (3, 4) else "#f1f0ec", ec="none", alpha=0.25 if j in (3, 4) else 1))
+        ax.text(j + 0.5, 2.45, c, ha="center", va="center", fontsize=11, family="monospace", color=INK)
+        ax.text(j + 0.5, 1.6, str(j + 1), ha="center", fontsize=6.5, color=INK2)
+    ax.add_patch(FancyBboxPatch((6.12, 2.0), 0.76, 0.9, boxstyle="round,pad=0.02,rounding_size=0.12", fc="none", ec=INK, lw=1.2))
+    ax.add_patch(FancyArrowPatch((6.5, 3.0), (4.5, 3.0), connectionstyle="arc3,rad=0.5", arrowstyle="-|>", color=C[2], lw=1.3, mutation_scale=8))
+    ax.add_patch(FancyArrowPatch((6.5, 3.0), (3.5, 3.0), connectionstyle="arc3,rad=0.55", arrowstyle="-|>", color=C[7], lw=1.0, ls="--", mutation_scale=8))
+    ax.text(5.55, 3.62, "target, 2 back", ha="center", fontsize=6.5, color=C[2], weight="bold")
+    ax.text(2.6, 3.25, "lure, 3 back", ha="center", fontsize=6.5, color=C[7], weight="bold")
+    ax.text(3.5, 0.9, "query: \"r\"  answer: no match (\"t\" is 2 back)\nlure: an \"r\" sits 3 back", ha="center", fontsize=6.5, color=INK2)
+    # b: two accounts
+    ax = fig.add_axes([0.34, 0.08, 0.31, 0.84]); ax.axis("off"); ax.set_xlim(0, 10); ax.set_ylim(0, 10)
+    ax.set_title("b  Two accounts of an error", loc="left")
+    for y, title, desc, col in ((6.6, "Locating failure (precision)", "softmax attention spreads over\nnear positions; the lure is read", C[0]),
+                                (1.6, "Readout failure (interference)", "attention lands on the target; other\nitems' content corrupts the readout", C[1])):
+        ax.add_patch(FancyBboxPatch((0.2, y - 0.6), 9.6, 3.3, boxstyle="round,pad=0.02,rounding_size=0.3", fc=shade(col, 0.0), ec="none"))
+        ax.text(0.6, y + 2.0, title, fontsize=7.5, weight="bold", color=INK)
+        ax.text(0.6, y + 0.9, desc, fontsize=6.6, color=INK, va="center")
+        ax.text(0.6, y - 0.2, "fix: sharpen attention" if y > 5 else "fix: remove distractor content", fontsize=6.6, color=INK2, style="italic")
+    # c: the answer
+    ax = fig.add_axes([0.79, 0.2, 0.2, 0.62])
+    b = S["b1"]; base = {(r["model"], r["n"]): r["dprime"] for r in b if r["cond"] == "baseline"}
+    ok = {k for k, v in base.items() if v > 0.3}
+    vals = [np.median([r["delta"] for r in b if r["cond"] == c and (r["model"], r["n"]) in ok])
+            for c in ("sharpen-top3@0.67", "suppress@0.5")]
+    ax.barh([1, 0], vals, color=[C[0], C[1]], height=0.55)
+    ax.set_yticks([1, 0], ["sharpen\nattention", "remove distractor\ncontent"]); ax.grid(axis="y", visible=False)
+    for y, v in zip([1, 0], vals):
+        ax.text(v + 0.02, y, f"{v:+.2f}", va="center", fontsize=7, color=INK)
+    ax.axvline(0, color=INK2, lw=1); ax.set_xlim(-0.1, 0.85)
+    ax.set_xlabel("median change in d′\n(15 LLMs × N = 2–4)")
+    ax.set_title("c  The answer: readout", loc="left")
+    save(fig, out, "fig1_overview")
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--summary", default="results/summary.json")
     p.add_argument("--out", default="figures")
     a = p.parse_args()
     S = json.load(open(a.summary))
-    for f in (fig2, fig3, fig4, fig5, fig6):
+    for f in (fig1, fig2, fig3, fig4, fig5, fig6):
         f(S, a.out)
         print("wrote", f.__name__)
 
