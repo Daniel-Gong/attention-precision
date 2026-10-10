@@ -30,6 +30,7 @@ STUDY = {  # study -> (module, output prefix, extra args)
     "heads": ("ap.llm.heads", "l3", ["--ns", "1", "2", "3", "4"]),
     "behave": ("ap.llm.behave", "l2", []),
     "suppress": ("ap.llm.suppress", "l5s", []),
+    "probe": ("ap.llm.probe_lure", "l8", ["--l3", "/tmp/l3.jsonl", "--l2", "/tmp/l2.jsonl"]),
 }
 
 
@@ -41,7 +42,7 @@ def _run(study, model, dtype, batch, l3_text, l2_text, extra):
     open("/tmp/l3.jsonl", "w").write(l3_text)
     open("/tmp/l2.jsonl", "w").write(l2_text)
     cmd = ["python", "-m", mod, "--model", model, "--dtype", dtype, "--out", "/tmp/out.jsonl", *args, *extra]
-    if study in ("intervene", "behave", "suppress"):
+    if study in ("intervene", "behave", "suppress", "probe"):
         cmd += ["--batch", str(batch)]
     env = {**os.environ, "PYTHONPATH": "/root/src", "HF_HOME": "/cache"}
     p = subprocess.run(cmd, env=env, capture_output=True, text=True)
@@ -57,7 +58,7 @@ def run_big(*a):
     return _run(*a)
 
 
-@app.function(gpu="B200", timeout=12 * 3600, volumes={"/cache": hf})
+@app.function(gpu="B200", timeout=12 * 3600, volumes={"/cache": hf}, memory=65536)
 def run_best(*a):
     return _run(*a)
 
@@ -136,7 +137,7 @@ def main(study: str = "intervene", models: str = "", model_list: str = "configs/
     for m, dtype, batch in rows:
         if want is not None and m not in want:
             continue
-        if study in ("intervene", "locate") and m not in done_l3:   # suppress needs no L3 heads
+        if study in ("intervene", "locate", "probe") and m not in done_l3:   # suppress needs no L3 heads
             print(f"skip {m}: no L3 results yet")
             continue
         for n in (split_ns.split() or [None]):

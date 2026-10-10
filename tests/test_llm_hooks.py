@@ -281,3 +281,20 @@ def test_xiong_sweep_runs():
     spaces = S.fit_subspaces(model, tok, n, cal[0], cal[1], demos, "cpu", batch=4)
     rows = S.xiong_sweep(model, tok, n, cal, test, demos, "cpu", spaces, 4, n_dirs=2, alphas=(1.0,))
     assert len(rows) == 4 and all("dprime" in r and "cal_dprime" in r for r in rows)
+
+
+def test_probe_lure_on_random_model():
+    import numpy as np
+    from ap.llm import probe_lure as PL
+    from ap.llm.behave import make_sets
+    tok = FakeTok()
+    torch.manual_seed(0)
+    model = AutoModelForCausalLM.from_config(GPT2Config(vocab_size=64, n_positions=1024, n_embd=32, n_layer=2, n_head=4),
+                                             attn_implementation="ap_eager").eval()
+    n = 2
+    demos, _, (x, t, l) = make_sets(n, 40, 4, 1)
+    sc, feats, outs = PL.collect(model, tok, n, x, t, demos, [(1, 2), (0, 1)], "cpu", [0, 1, 2], batch=8)
+    assert sc.shape == x.shape and feats[2].shape == (40, 24, 32) and outs.shape == (40, 24, 16)
+    res = PL.analyse(n, t, l, sc, 0.0, feats, outs, "cpu")
+    assert set(res["sites"]) == {"site0", "site1", "site2", "heads"}
+    assert 0 <= res["sites"]["heads"]["auc"] <= 1 and res["n_lure"] > 0
