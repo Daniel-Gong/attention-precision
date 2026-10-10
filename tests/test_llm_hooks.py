@@ -310,4 +310,4 @@ def test_boot_on_random_model(tmp_path, monkeypatch):
     assert d.shape == (50,) and np.isfinite(d).all()
     full = B.boot_dprime(sc, t, 0.0, 2, np.arange(4)[None])[0]
     from ap.metrics import dprime
-    assert abs(full - dprime(5, 6, 0, 2)) < 1e-9
+    assert abs(full - dprime(11, 12, 0, 4)) < 1e-9
