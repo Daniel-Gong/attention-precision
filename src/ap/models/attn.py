@@ -49,6 +49,8 @@ class AttnControl:
     temperature: float = 1.0                  # logits / temperature
     heads: list[tuple[int, int]] | None = None  # (layer, head) pairs to apply to; None = all
     oracle_offset: int | None = None          # replace attention with one-hot on i - offset
+    oracle_mix: float | None = None           # with oracle_offset: weight on i - offset, rest on i itself
+    denoise_offset: int | None = None         # keep only the model's own mass on i and i - offset, renormalised
     record: bool = False                      # keep attention probs and logits
     store: dict = field(default_factory=dict)
 
@@ -125,11 +127,20 @@ class Attention(nn.Module):
         if ctl is not None and ctl.oracle_offset is not None:
             off = ctl.oracle_offset
             oracle = torch.zeros(L, L, device=x.device)
+            w = 1.0 if ctl.oracle_mix is None else ctl.oracle_mix
             for r in range(L):
-                oracle[r, max(0, r - off)] = 1.0
+                oracle[r, r] += 1.0 - w
+                oracle[r, max(0, r - off)] += w
             for hh in range(h):
                 if ctl.applies(self.layer, hh):
                     A[:, hh] = oracle
+        if ctl is not None and ctl.denoise_offset is not None:
+            keep = (rel == 0) | (rel == ctl.denoise_offset)
+            keep = keep | ((i < ctl.denoise_offset).unsqueeze(1) & (i == 0).unsqueeze(0))  # early rows: i - N clipped to 0
+            for hh in range(h):
+                if ctl.applies(self.layer, hh):
+                    Ah = A[:, hh] * keep
+                    A[:, hh] = Ah / Ah.sum(-1, keepdim=True).clamp(min=1e-9)
         if ctl is not None and ctl.record:
             ctl.store.setdefault("attn", []).append(A.detach())
             ctl.store.setdefault("logits", []).append(logits.masked_fill(future, float("-inf")).detach())

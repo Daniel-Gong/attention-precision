@@ -65,10 +65,13 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("ckpt_dir")
     p.add_argument("--out", required=True)
+    p.add_argument("--conds", default="all", help="all | oracle2 (only the split-oracle and denoise conditions)")
+    p.add_argument("--shard", default="0/1", help="i/k: process every k-th checkpoint starting at i")
     a = p.parse_args()
+    si, sk = map(int, a.shard.split("/"))
     torch.set_num_threads(2)
     with open(a.out, "a") as f:
-        for path in sorted(glob.glob(os.path.join(a.ckpt_dir, "*.pt"))):
+        for path in sorted(glob.glob(os.path.join(a.ckpt_dir, "*.pt")))[si::sk]:
             ck = torch.load(path, map_location="cpu")
             if "family" in ck["model"]:
                 continue
@@ -78,13 +81,19 @@ def main():
             sets = dict(zip(("natural", "lure"), test_sets(n, cfg.max_len)))
             conds = [("tau", t, AttnControl(temperature=t, record=True)) for t in TAUS]
             conds.append(("oracle", n, AttnControl(oracle_offset=n, record=True)))
+            # E7 readout test, redone: the 1-layer model has no residual stream, so the output must see
+            # both the current item and i - N. Split oracle: weight w on i - N and 1 - w on i itself.
+            # Denoise: keep the model's own attention on i and i - N only (all other mass removed).
+            split = [("oracle_mix", w, AttnControl(oracle_offset=n, oracle_mix=w, record=True)) for w in (0.25, 0.5, 0.75)]
+            split.append(("denoise", n, AttnControl(denoise_offset=n, record=True)))
+            conds = split if a.conds == "oracle2" else conds + split
             for kind, val, ctl in conds:
                 for sname, (x, t, l) in sets.items():
                     ctl.store.clear()
                     r = evaluate(m, x, t, l, n, ctl=ctl)
                     f.write(json.dumps({"ckpt": os.path.basename(path), "n": n, "seed": seed, "set": sname,
                                         "cond": kind, "value": val, **r}) + "\n")
-            if cfg.pe == "learned" and not cfg.ln:
+            if cfg.pe == "learned" and not cfg.ln and a.conds == "all":
                 for drop in ("content", "position"):
                     ko = Knockout(m, drop)
                     for sname, (x, t, l) in sets.items():
