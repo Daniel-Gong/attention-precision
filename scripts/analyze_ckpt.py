@@ -86,7 +86,10 @@ def main():
             # Denoise: keep the model's own attention on i and i - N only (all other mass removed).
             split = [("oracle_mix", w, AttnControl(oracle_offset=n, oracle_mix=w, record=True)) for w in (0.25, 0.5, 0.75)]
             split.append(("denoise", n, AttnControl(denoise_offset=n, record=True)))
-            conds = split if a.conds == "oracle2" else conds + split
+            # In this architecture the answer is carried by how much mass lands on i - N, so renormalising
+            # destroys it. denoise_raw removes all other mass but keeps the kept mass at its own size.
+            raw = [("denoise_raw", n, AttnControl(denoise_offset=n, denoise_renorm=False, record=True))]
+            conds = raw if a.conds == "raw" else split if a.conds == "oracle2" else conds + split + raw
             for kind, val, ctl in conds:
                 for sname, (x, t, l) in sets.items():
                     ctl.store.clear()

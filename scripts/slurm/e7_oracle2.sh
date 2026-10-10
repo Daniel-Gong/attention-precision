@@ -11,5 +11,5 @@
 set -euo pipefail
 set +u; module load miniconda; conda activate ap; set -u
 mkdir -p results/e7_oracle2
-PYTHONPATH=src python scripts/analyze_ckpt.py runs/e1 --conds oracle2 --shard ${SLURM_ARRAY_TASK_ID}/12 \
-  --out results/e7_oracle2/s${SLURM_ARRAY_TASK_ID}.jsonl
+PYTHONPATH=src python scripts/analyze_ckpt.py runs/e1 --conds ${CONDS:-oracle2} --shard ${SLURM_ARRAY_TASK_ID}/12 \
+  --out results/e7_oracle2/${CONDS:-oracle2}_s${SLURM_ARRAY_TASK_ID}.jsonl
