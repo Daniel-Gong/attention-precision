@@ -96,12 +96,13 @@ class LinAttnLayer(nn.Module):
         self.out = nn.Linear(d, d)
 
     def forward(self, x):
+        # Causal linear attention, computed in its equivalent L x L form: for short sequences this
+        # avoids materialising the (B, L, n, d) running state, which ran out of memory at n = 512.
         q, k, v = F.elu(self.q(x)) + 1, F.elu(self.k(x)) + 1, self.v(x)
-        S = torch.cumsum(k.unsqueeze(-1) * v.unsqueeze(-2), dim=1)        # (B, L, n, d)
-        z = torch.cumsum(k, dim=1)                                        # (B, L, n)
-        num = (q.unsqueeze(-1) * S).sum(-2)
-        den = (q * z).sum(-1, keepdim=True).clamp(min=1e-6)
-        return self.out(num / den)
+        L = x.size(1)
+        w = (q @ k.transpose(1, 2)).tril()                                # (B, L, L), nonnegative
+        den = w.sum(-1, keepdim=True).clamp(min=1e-6)
+        return self.out((w @ v) / den)
 
 
 class RecurrentModel(nn.Module):

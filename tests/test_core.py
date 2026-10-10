@@ -174,3 +174,16 @@ def test_qk_terms_reconstruct_logits():
     r = ov_readout(m1); A = c1.store["attn"][0][:, 0].numpy()
     pred = (A * (r["cE"][xi][:, None, :] + r["cP"][None, None, :])).sum(-1) + r["c0"]
     assert np.allclose(pred, (out[..., 1] - out[..., 0]).numpy(), atol=1e-4)
+
+
+def test_linattn_matches_recurrent_form():
+    from ap.models.recurrent import LinAttnLayer
+    import torch.nn.functional as F
+    torch.manual_seed(0)
+    layer = LinAttnLayer(16, 8).eval()
+    x = torch.randn(3, 24, 16)
+    with torch.no_grad():
+        q, k, v = F.elu(layer.q(x)) + 1, F.elu(layer.k(x)) + 1, layer.v(x)
+        S = torch.cumsum(k.unsqueeze(-1) * v.unsqueeze(-2), 1); z = torch.cumsum(k, 1)
+        ref = layer.out((q.unsqueeze(-1) * S).sum(-2) / (q * z).sum(-1, keepdim=True))
+        assert torch.allclose(layer(x), ref, atol=1e-5)
