@@ -1,0 +1,10 @@
+# E10: one model trained on every N, with N given by a cue token (2-layer residual attention).
+name: e10
+ns: [1, 2, 3, 4, 5, 6]
+max_steps: 60000
+patience: 4000
+eval_every: 500
+batch_size: 64
+lr: 3.0e-4
+model: {d_model: 128, n_layers: 2, n_heads: 1, pe: learned, residual: true, ffn: false, ln: false}
+save_ckpt: runs/e10
