@@ -28,8 +28,11 @@ def slim(row):
 def main():
     n = 0
     with gzip.open(OUT, "wt") as f:
-        for p in sorted(glob.glob("results/parts/*.jsonl")) + sorted(glob.glob("results/parts/*.json")):
-            src = os.path.basename(p)
+        extra = ["results/e6_circuits.jsonl", "results/e1_interventions.jsonl"] + sorted(glob.glob("results/e7_oracle2/*.jsonl"))
+        for p in sorted(glob.glob("results/parts/*.jsonl")) + sorted(glob.glob("results/parts/*.json")) + extra:
+            if not os.path.exists(p):
+                continue
+            src = os.path.relpath(p, "results")
             if p.endswith(".json"):
                 f.write(json.dumps({"_src": src, "_l1": json.load(open(p))}) + "\n"); n += 1
                 continue
