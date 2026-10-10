@@ -31,7 +31,8 @@ TAUS = [0.5, 0.67, 0.8, 1.25, 1.5, 2.0]
 def top_heads(l3_path, model, n, k):
     rows = [json.loads(l) for l in open(l3_path)]
     r = [x for x in rows if x["model"] == model and x["n"] == n][-1]
-    ranked = sorted(r["patch_top"].items(), key=lambda kv: -kv[1])[:k]
+    pt = {h: v for h, v in r["patch_top"].items() if v == v}            # drop NaN (tiny clean-corrupt gap)
+    ranked = sorted(pt.items(), key=lambda kv: -kv[1])[:k]
     return [tuple(map(int, h.split("."))) for h, _ in ranked]
 
 
