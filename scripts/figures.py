@@ -1,0 +1,296 @@
+"""Paper figures from results/summary.json (built by scripts/summarize_all.py).
+
+  Fig 2  minimal models: the decline (E1), attention variants (E5), depth removes it (E3b, E10)
+  Fig 3  LLM behaviour: d' versus N by family, lure false alarms, chat format, 14B
+  Fig 4  locating versus readout: L7 error split, L8 probe by depth
+  Fig 5  causal tests on one axis (B1 bootstrap) + Xiong et al. replication
+  Fig 6  architectures (E9) and development (L6)
+
+Usage: python scripts/figures.py [--summary results/summary.json] [--out figures]
+"""
+import argparse
+import json
+import os
+from collections import defaultdict
+
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import numpy as np
+from matplotlib.colors import to_rgb
+
+# reference categorical palette (dataviz skill), fixed order; text and grid tokens
+C = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948"]
+INK, INK2, GRID = "#0b0b0b", "#52514e", "#e4e3df"
+FAM = {"pythia": C[0], "gpt2": C[1], "qwen": C[2]}
+SIZE = {"pythia-70m": 0.07, "pythia-160m": 0.16, "pythia-410m": 0.41, "pythia-1b": 1.0, "pythia-1.4b": 1.4,
+        "pythia-2.8b": 2.8, "pythia-6.9b": 6.9, "gpt2": 0.124, "gpt2-medium": 0.355, "gpt2-large": 0.774,
+        "gpt2-xl": 1.5, "Qwen2.5-0.5B": 0.5, "Qwen2.5-1.5B": 1.5, "Qwen2.5-7B": 7.0, "Qwen2.5-14B": 14.0}
+
+plt.rcParams.update({
+    "font.family": "DejaVu Sans", "font.size": 8, "axes.titlesize": 8.5, "axes.labelsize": 8,
+    "axes.edgecolor": INK2, "axes.labelcolor": INK, "xtick.color": INK2, "ytick.color": INK2,
+    "axes.spines.top": False, "axes.spines.right": False, "axes.grid": True, "grid.color": GRID,
+    "grid.linewidth": 0.6, "axes.axisbelow": True, "legend.frameon": False, "legend.fontsize": 7,
+    "lines.linewidth": 1.5, "lines.markersize": 4, "savefig.dpi": 300, "figure.dpi": 150,
+})
+
+
+def short(m):
+    return m.split("/")[-1]
+
+
+def family(m):
+    m = m.lower()
+    return "pythia" if "pythia" in m else "qwen" if "qwen" in m else "gpt2"
+
+
+def shade(hexc, t):
+    """t in [0, 1]: light (0) to the full hue (1), for a size ramp inside one family."""
+    r = np.array(to_rgb(hexc)); w = np.ones(3)
+    return tuple(w + (r - w) * (0.35 + 0.65 * t))
+
+
+def size_t(m, fam_models):
+    s = np.log([SIZE[short(x)] for x in fam_models]); v = np.log(SIZE[short(m)])
+    return 0.0 if s.max() == s.min() else (v - s.min()) / (s.max() - s.min())
+
+
+def end_label(ax, x, y, text, color, dy=0):
+    ax.annotate(text, (x, y), xytext=(4, dy), textcoords="offset points", va="center", fontsize=7, color=INK)
+
+
+def save(fig, out, name):
+    os.makedirs(out, exist_ok=True)
+    fig.savefig(os.path.join(out, name + ".pdf"), bbox_inches="tight")
+    fig.savefig(os.path.join(out, name + ".png"), bbox_inches="tight")
+    plt.close(fig)
+
+
+def toy_curve(S, tag, key="natural_dprime"):
+    pts = sorted((r["n"], r[key][0], r[key][1]) for r in S["toy"] if r["tag"] == tag and key in r)
+    return np.array(pts) if pts else None
+
+
+def e10_curve(S, tag, key="natural_dprime"):
+    pts = sorted((r["n"], r[key][0], r[key][1]) for r in S["e10"] if r["tag"] == tag and key in r)
+    return np.array(pts) if pts else None
+
+
+def series(ax, arr, color, label, marker="o", ls="-", direct=True, dy=0):
+    ax.errorbar(arr[:, 0], arr[:, 1], yerr=arr[:, 2], color=color, marker=marker, ls=ls, capsize=0,
+                elinewidth=1, label=label, mec="white", mew=0.8)
+    if direct:
+        end_label(ax, arr[-1, 0], arr[-1, 1], label, color, dy)
+
+
+def fig2(S, out):
+    fig, axs = plt.subplots(1, 3, figsize=(7.2, 2.3), sharey=False)
+    ax = axs[0]
+    e1 = toy_curve(S, "e1")
+    series(ax, e1, C[0], "1-layer, softmax", direct=False)
+    ax.set_title("a  The decline at convergence (E1)", loc="left")
+    ax.set_xlabel("N"); ax.set_ylabel("d′ (test, 50 seeds, ± SEM)"); ax.set_ylim(0, 3.2)
+    ax = axs[1]
+    for i, (tag, lab, dy) in enumerate([("e1", "softmax", -5), ("e5-ssmax", "scalable softmax", 5),
+                                        ("e5-topk", "top-k", -2), ("e5-sigmoid", "sigmoid", 4)]):
+        a = toy_curve(S, tag)
+        if a is not None:
+            series(ax, a, C[i], lab, dy=dy)
+    ax.set_title("b  Normalization sets the slope (E5)", loc="left")
+    ax.set_xlabel("N"); ax.set_ylim(0, 4.2); ax.set_xlim(0.7, 7.6)
+    ax = axs[2]
+    rows = [(toy_curve(S, "e1"), "1 layer, no residual", C[0]), (toy_curve(S, "e3b-learned"), "2 layers + residual", C[1]),
+            (e10_curve(S, "e10-full"), "2 layers, all N (cued)", C[2])]
+    for a, lab, col in rows:
+        if a is not None:
+            series(ax, a, col, lab)
+    ax.set_title("c  Depth removes it (E3b, E10)", loc="left")
+    ax.set_xlabel("N"); ax.set_ylim(0, 8.5); ax.set_xlim(0.7, 8.2)
+    for ax in axs:
+        ax.set_xticks(range(1, 7))
+    fig.tight_layout(w_pad=1.2)
+    save(fig, out, "fig2_minimal_models")
+
+
+def l2_rows(S, fmt="lines", cond="feedback"):
+    return [r for r in S["l2"] if (r.get("format") or "lines") == fmt and r["condition"] == cond and r.get("revision") is None]
+
+
+def fig3(S, out):
+    fig, axs = plt.subplots(1, 4, figsize=(7.4, 2.25), gridspec_kw={"width_ratios": [1, 1, 1, 1]})
+    rows = l2_rows(S)
+    by = defaultdict(list)
+    for r in rows:
+        by[r["model"]].append((r["n"], r["dprime"]))
+    fams = defaultdict(list)
+    for m in by:
+        if "Instruct" not in m:
+            fams[family(m)].append(m)
+    titles = {"pythia": "a  Pythia 70M–6.9B", "gpt2": "b  GPT-2 124M–1.5B", "qwen": "c  Qwen2.5 0.5B–14B"}
+    for ax, fam in zip(axs[:3], ["pythia", "gpt2", "qwen"]):
+        ms = sorted(fams[fam], key=lambda m: SIZE[short(m)])
+        for m in ms:
+            a = np.array(sorted(by[m]))
+            col = shade(FAM[fam], size_t(m, ms))
+            ax.plot(a[:, 0], a[:, 1], color=col, marker="o", mec="white", mew=0.6)
+        for m, dy in ((ms[0], -6), (ms[-1], 6)):
+            a = np.array(sorted(by[m]))
+            lab = short(m).replace("Qwen2.5-", "").replace("pythia-", "").upper().replace("GPT2-XL", "XL").replace("GPT2", "124M")
+            end_label(ax, a[-1, 0], a[-1, 1], lab, None, dy)
+        ax.text(0.98, 0.97, "darker = larger", transform=ax.transAxes, ha="right", va="top", fontsize=6.5, color=INK2)
+        ax.set_title(titles[fam], loc="left"); ax.set_xlabel("N"); ax.set_xticks(range(1, 7))
+        ax.set_ylim(0, 4.5); ax.set_xlim(0.7, 7.3)
+    axs[0].set_ylabel("d′ (feedback condition)")
+    ax = axs[3]
+    lure, non = defaultdict(list), defaultdict(list)
+    for r in rows:
+        if "Instruct" in r["model"]:
+            continue
+        ks = [k for k in r if k.startswith("fa_lure_")]
+        near = [r[k] for k in ks if abs(int(k.split("_")[-1]) - r["n"]) == 1]
+        if near and r.get("fa_nonlure") is not None:
+            lure[r["n"]].append(np.mean(near)); non[r["n"]].append(r["fa_nonlure"])
+    ns = sorted(n for n in lure if n >= 2)
+    x = np.arange(len(ns)); w = 0.36
+    ml = [np.median(lure[n]) for n in ns]; mn = [np.median(non[n]) for n in ns]
+    ax.bar(x - w / 2 - 0.01, ml, w, color=C[7], label="lure at N ± 1")
+    ax.bar(x + w / 2 + 0.01, mn, w, color="#b8b7b1", label="no lure")
+    for xi, n in zip(x, ns):
+        ax.scatter(np.full(len(lure[n]), xi - w / 2) + np.random.default_rng(n).uniform(-0.08, 0.08, len(lure[n])),
+                   lure[n], s=5, color=INK2, zorder=3, linewidths=0)
+    ax.set_xticks(x, [str(n) for n in ns]); ax.set_xlabel("N"); ax.set_ylabel("false-alarm rate")
+    ax.set_title("d  Lures drive false alarms", loc="left")
+    ax.legend(loc="upper right", handlelength=1, bbox_to_anchor=(1.02, 1.0), fontsize=6.5)
+    ax.set_ylim(0, 1.15)
+    ax.grid(axis="x", visible=False)
+    fig.tight_layout(w_pad=0.8)
+    save(fig, out, "fig3_llm_behaviour")
+
+
+def fig4(S, out):
+    fig, axs = plt.subplots(1, 3, figsize=(7.4, 2.6), gridspec_kw={"width_ratios": [1.0, 1.25, 1.25]})
+    ax = axs[0]
+    parts = [("located_probe_wrong", "attended, head output wrong", C[7]),
+             ("located_probe_right", "attended, lost downstream", C[3]),
+             ("mislocated", "attention elsewhere", "#b8b7b1")]
+    ns = [2, 3, 4]
+    good = [r for r in S["l7"] if "gpt2-large" not in r["model"] and r.get("split_miss")
+            and r["split_miss"]["count"] < 0.9 * r["n_items"] * 0.3]
+    bottom = np.zeros(len(ns))
+    for key, lab, col in parts:
+        v = np.array([np.median([r["split_miss"][key] for r in good if r["n"] == n]) for n in ns])
+        ax.bar(ns, v, 0.62, bottom=bottom, color=col, label=lab, edgecolor="white", linewidth=1)
+        bottom += v
+    ax.set_ylim(0, 1); ax.set_xticks(ns); ax.set_xlabel("N"); ax.set_ylabel("share of misses (median model)")
+    ax.set_title("a  Misses: attention is in place (L7)", loc="left"); ax.grid(axis="x", visible=False)
+    ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.28), ncol=1, fontsize=6.5, handlelength=1)
+    for ax, n, letter in ((axs[1], 2, "b"), (axs[2], 3, "c")):
+        rows = [r for r in S["l8"] if r["n"] == n]
+        grid = np.linspace(0, 1, 9)
+        cur, fa = [], []
+        for r in rows:
+            sites = sorted((int(k[4:]) / r["n_layers"], v) for k, v in r["sites"].items() if k.startswith("site"))
+            d = np.array([s for s, _ in sites])
+            cur.append(np.interp(grid, d, [v["auc"] for _, v in sites]))
+            fa.append(np.interp(grid, d, [v["lure_fa_called_lure"] or 0 for _, v in sites]))
+            ax.plot(d, [v["auc"] for _, v in sites], color=shade(C[0], 0.15), lw=0.8, zorder=1)
+        cur, fa = np.array(cur), np.array(fa)
+        ax.plot(grid, np.median(cur, 0), color=C[0], lw=2, label="probe: match vs lure (AUC)", zorder=3)
+        ax.plot(grid, np.median(fa, 0), color=C[1], lw=2, ls="--", label="model's lure false alarms\nthe probe calls lures", zorder=3)
+        mauc = np.median([r["model_auc"] for r in rows])
+        ax.axhline(mauc, color=INK2, lw=1.2, ls=":", zorder=2)
+        ax.annotate(f"model's own answer, AUC {mauc:.2f}", (1.0, mauc), xytext=(0, -8), textcoords="offset points",
+                    ha="right", fontsize=6.5, color=INK2)
+        ax.set_ylim(0.0, 1.03); ax.set_xlabel("relative depth (0 = input, 1 = last layer)")
+        ax.set_title(f"{letter}  Residual-stream probe, N = {n} (L8)", loc="left")
+        if n == 2:
+            ax.set_ylabel("AUC / share of items")
+    h, l = axs[1].get_legend_handles_labels()
+    fig.legend(h, [x.replace("\n", " ") for x in l], loc="lower center", bbox_to_anchor=(0.66, 0.0), ncol=2, fontsize=6.5)
+    fig.tight_layout(w_pad=1.0)
+    save(fig, out, "fig4_locate_vs_readout")
+
+
+def fig5(S, out):
+    b = [r for r in S["b1"]]
+    base = {(r["model"], r["n"]): r["dprime"] for r in b if r["cond"] == "baseline"}
+    ok = {k for k, v in base.items() if v > 0.3}
+    conds = [("sharpen-top3@0.8", "Sharpen top-3 heads, τ = 0.8", C[0]),
+             ("sharpen-top3@0.67", "Sharpen top-3 heads, τ = 0.67", C[0]),
+             ("ablate-random10", "Ablate 10 random heads", "#8d8c86"),
+             ("ablate-top10", "Ablate top-10 heads", C[7]),
+             ("suppress-random@1", "Suppress random subspace", "#8d8c86"),
+             ("xiong", "Xiong et al. intervention (held-out)", C[3]),
+             ("suppress@1", "Suppress distractor content, full", C[2]),
+             ("suppress@0.5", "Suppress distractor content, half", C[2])]
+    xi = defaultdict(dict)
+    for r in S["l5s"]:
+        if r["cond"] in ("xiong_baseline", "xiong_heldout"):
+            xi[(r["model"], r["n"])][r["cond"]] = r["dprime"]
+    fig, ax = plt.subplots(figsize=(5.2, 3.0))
+    rng = np.random.default_rng(0)
+    for y, (c, lab, col) in enumerate(conds):
+        if c == "xiong":
+            d = np.array([v["xiong_heldout"] - v["xiong_baseline"] for k, v in xi.items()
+                          if len(v) == 2 and k in ok])
+            lo = hi = d
+        else:
+            rs = [r for r in b if r["cond"] == c and (r["model"], r["n"]) in ok]
+            d = np.array([r["delta"] for r in rs]); lo = np.array([r["delta_ci"][0] for r in rs])
+            hi = np.array([r["delta_ci"][1] for r in rs])
+        yy = y + rng.uniform(-0.22, 0.22, len(d))
+        ax.hlines(yy, lo, hi, color=col, lw=0.7, alpha=0.6)
+        ax.scatter(d, yy, s=9, color=col, linewidths=0, zorder=3, alpha=0.85)
+        med = np.median(d)
+        ax.plot([med, med], [y - 0.34, y + 0.34], color=INK, lw=1.8, zorder=4)
+        ax.text(2.2, y, f"median {med:+.2f}", va="center", fontsize=7, color=INK)
+    ax.axvline(0, color=INK2, lw=1)
+    ax.set_yticks(range(len(conds)), [l for _, l, _ in conds]); ax.grid(axis="y", visible=False)
+    ax.set_xlabel("change in d′ from baseline\n(dot = one model × N, bar = 95% bootstrap CI, black line = median)")
+    ax.set_xlim(-2.4, 2.1)
+    ax.set_title("Causal tests, 15 LLMs × N = 2–4", loc="left", fontsize=8.5)
+    fig.tight_layout()
+    save(fig, out, "fig5_causal_tests")
+
+
+def fig6(S, out):
+    fig, axs = plt.subplots(1, 3, figsize=(7.2, 2.3))
+    fams = [("lstm", "LSTM", C[0]), ("lru", "LRU", C[1]), ("linattn", "linear attention", C[2]), ("selective", "selective SSM", C[3])]
+    for ax, st, letter in ((axs[0], 32, "a"), (axs[1], 512, "b")):
+        for f, lab, col in fams:
+            a = toy_curve(S, f"e9-{f}-{st}")
+            if a is not None:
+                series(ax, a, col, lab, direct=False)
+        a = toy_curve(S, "e1")
+        series(ax, a, "#8d8c86", "1-layer attention", ls="--", direct=False)
+        ax.set_title(f"{letter}  State size {st} (E9)", loc="left"); ax.set_xlabel("N"); ax.set_xticks(range(1, 7))
+    axs[0].set_ylabel("d′ (test, ± SEM)")
+    h, l = axs[1].get_legend_handles_labels()
+    fig.legend(h, l, loc="lower center", bbox_to_anchor=(0.36, -0.08), ncol=5, fontsize=6.5)
+    ax = axs[2]
+    rows = [r for r in S["l6_behave"] if r["condition"] == "feedback" and r["n"] == 2]
+    for i, m in enumerate(sorted({r["model"] for r in rows}, key=lambda m: SIZE[short(m)])):
+        pts = sorted((int(r["revision"][4:]), r["dprime"]) for r in rows if r["model"] == m)
+        a = np.array(pts); a[:, 0] = np.maximum(a[:, 0], 100)
+        ax.plot(a[:, 0], a[:, 1], color=C[i], marker="o", mec="white", mew=0.6, label=short(m))
+        end_label(ax, a[-1, 0], a[-1, 1], short(m).replace("pythia-", "Pythia-"), None)
+    ax.set_xscale("log"); ax.set_xlabel("training step (step 0 shown at 10²)"); ax.set_xlim(80, 6e5)
+    ax.set_title("c  N-back emerges early in Pythia (L6, N = 2)", loc="left")
+    fig.tight_layout(w_pad=1.0)
+    save(fig, out, "fig6_architectures_development")
+
+
+def main():
+    p = argparse.ArgumentParser()
+    p.add_argument("--summary", default="results/summary.json")
+    p.add_argument("--out", default="figures")
+    a = p.parse_args()
+    S = json.load(open(a.summary))
+    for f in (fig2, fig3, fig4, fig5, fig6):
+        f(S, a.out)
+        print("wrote", f.__name__)
+
+
+if __name__ == "__main__":
+    main()
