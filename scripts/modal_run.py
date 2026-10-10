@@ -14,6 +14,7 @@ import os
 import pathlib
 
 import modal
+import modal.exception
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 image = (modal.Image.debian_slim(python_version="3.11")
@@ -64,13 +65,19 @@ def big(model):
 
 
 @app.local_entrypoint()
-def main(study: str = "intervene", models: str = "", model_list: str = "configs/llm_models.txt", extra: str = ""):
+def main(study: str = "intervene", models: str = "", model_list: str = "configs/llm_models.txt", extra: str = "",
+         gpu: str = "auto", split_ns: str = "", tag: str = ""):
+    """gpu: auto (H100 for 6B+ models, L40S otherwise) | big (H100 for all) | small.
+    split_ns: e.g. "2 3" runs one container per N (passes --ns <n>) for each model.
+    tag: output goes to results/parts/<prefix>_<tag>_<model>.jsonl (rows carry the model name, so
+    duplicates across runs are removed at analysis time)."""
+    import json
     os.chdir(ROOT)
     rows = [l.split() for l in open(model_list) if l.strip() and not l.startswith("#")]
     want = set(models.split()) if models else None
     l3 = "".join(open(p).read() for p in sorted(glob.glob("results/parts/l3_*.jsonl")))
     l2 = "".join(open(p).read() for p in sorted(glob.glob("results/parts/l2_*.jsonl")))
-    done_l3 = {__import__("json").loads(l)["model"] for l in l3.splitlines() if l.strip()}
+    done_l3 = {json.loads(l)["model"] for l in l3.splitlines() if l.strip()}
     jobs = []
     for m, dtype, batch in rows:
         if want is not None and m not in want:
@@ -78,16 +85,31 @@ def main(study: str = "intervene", models: str = "", model_list: str = "configs/
         if study in ("intervene", "locate") and m not in done_l3:
             print(f"skip {m}: no L3 results yet")
             continue
-        jobs.append((m, dtype, int(batch)))
-    print(f"launching {study} on Modal for {len(jobs)} models")
-    calls = [(run_big if big(m) else run_small).spawn(study, m, d, b, l3, l2, extra.split()) for m, d, b in jobs]
-    prefix = STUDY[study][1]
+        for n in (split_ns.split() or [None]):
+            jobs.append((m, dtype, int(batch), extra.split() + (["--ns", n] if n else [])))
+    print(f"launching {study} on Modal: {len(jobs)} containers")
+    pick = lambda m: run_big if gpu == "big" or (gpu == "auto" and big(m)) else run_small
+    calls = [pick(m).spawn(study, m, d, b, l3, l2, ex) for m, d, b, ex in jobs]
+    prefix = STUDY[study][1] + (f"_{tag}" if tag else "")
     os.makedirs("results/parts", exist_ok=True); os.makedirs("logs", exist_ok=True)
-    for c in calls:
-        r = c.get()
-        tag = r["model"].replace("/", "_")
-        open(f"logs/modal_{study}_{tag}.log", "w").write(r["log"])
-        if r["out"]:
-            with open(f"results/parts/{prefix}_{tag}.jsonl", "a") as f:
-                f.write(r["out"])
-        print(f"{r['model']}: exit {r['returncode']}, {len(r['out'].splitlines())} rows", flush=True)
+    pending = dict(enumerate(calls))
+    while pending:                                   # collect in completion order, not launch order
+        for i, c in list(pending.items()):
+            try:
+                r = c.get(timeout=0)
+            except (TimeoutError, modal.exception.TimeoutError):
+                continue
+            except Exception as e:                   # container error: report and move on
+                print(f"{jobs[i][0]} {jobs[i][3]}: FAILED {type(e).__name__}: {e}", flush=True)
+                del pending[i]
+                continue
+            del pending[i]
+            mtag = r["model"].replace("/", "_")
+            ntag = "_".join(jobs[i][3][-1:]) if split_ns else ""
+            open(f"logs/modal_{study}{'_' + tag if tag else ''}_{mtag}{'_n' + ntag if ntag else ''}.log", "w").write(r["log"])
+            if r["out"]:
+                with open(f"results/parts/{prefix}_{mtag}.jsonl", "a") as f:
+                    f.write(r["out"])
+            print(f"{r['model']} {' '.join(jobs[i][3])}: exit {r['returncode']}, {len(r['out'].splitlines())} rows", flush=True)
+        if pending:
+            __import__("time").sleep(20)
