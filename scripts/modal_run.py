@@ -33,6 +33,8 @@ STUDY = {  # study -> (module, output prefix, extra args)
 def _run(study, model, dtype, batch, l3_text, l2_text, extra):
     import subprocess
     mod, _, args = STUDY[study]
+    if os.path.exists("/tmp/out.jsonl"):          # warm containers are reused across calls
+        os.remove("/tmp/out.jsonl")
     open("/tmp/l3.jsonl", "w").write(l3_text)
     open("/tmp/l2.jsonl", "w").write(l2_text)
     cmd = ["python", "-m", mod, "--model", model, "--dtype", dtype, "--out", "/tmp/out.jsonl", *args, *extra]
@@ -41,7 +43,9 @@ def _run(study, model, dtype, batch, l3_text, l2_text, extra):
     env = {**os.environ, "PYTHONPATH": "/root/src", "HF_HOME": "/cache"}
     p = subprocess.run(cmd, env=env, capture_output=True, text=True)
     hf.commit()
+    import json
     out = open("/tmp/out.jsonl").read() if os.path.exists("/tmp/out.jsonl") else ""
+    out = "".join(l + "\n" for l in out.splitlines() if l.strip() and json.loads(l).get("model") == model)
     return {"model": model, "returncode": p.returncode, "out": out, "log": (p.stdout + p.stderr)[-20000:]}
 
 
