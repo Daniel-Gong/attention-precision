@@ -52,6 +52,7 @@ class TrainConfig:
     workshop_dir: str = ""           # for regime=workshop
     save_ckpt: str = ""              # directory for best checkpoints ("" = don't save)
     threads: int = 2
+    device: str = "cpu"              # "cuda" when a GPU is available (Modal runs)
 
 
 def git_hash() -> str:
@@ -64,16 +65,17 @@ def git_hash() -> str:
 
 def evaluate(model, x, t, l, n, full=False, ctl=None):
     model.eval()
+    dev = next(model.parameters()).device
     with torch.no_grad():
         c = ctl if ctl is not None else (AttnControl(record=True) if full else None)
-        logits = model(torch.as_tensor(x), c)
-        loss = nn.functional.cross_entropy(logits.reshape(-1, 2), torch.as_tensor(t).reshape(-1)).item()
-        score = (logits[..., 1] - logits[..., 0]).numpy()
+        logits = model(torch.as_tensor(x, device=dev), c).float()
+        loss = nn.functional.cross_entropy(logits.reshape(-1, 2), torch.as_tensor(t, device=dev).reshape(-1)).item()
+        score = (logits[..., 1] - logits[..., 0]).cpu().numpy()
     out = {"loss": loss, **behaviour(score, t, l, n)}
     if full and c is not None and c.store.get("attn"):
         for li, A in enumerate(c.store["attn"]):
             for h in range(A.shape[1]):
-                for k, v in attention_stats(A[:, h].numpy(), t, n).items():
+                for k, v in attention_stats(A[:, h].detach().cpu().numpy(), t, n).items():
                     out[f"L{li}H{h}_{k}"] = v
     model.train()
     return out
@@ -91,6 +93,8 @@ def run(cfg: TrainConfig, seed: int) -> dict:
         keep = ModelConfig.__dataclass_fields__
         mcfg = ModelConfig(**{"max_len": cfg.length, **{k: v for k, v in cfg.model.items() if k in keep}})
         model = AttnModel(mcfg)
+    dev = torch.device(cfg.device if cfg.device != "cuda" or torch.cuda.is_available() else "cpu")
+    model = model.to(dev)
     opt_cls = torch.optim.AdamW if cfg.weight_decay > 0 else torch.optim.Adam
     opt = opt_cls(model.parameters(), lr=cfg.lr, weight_decay=cfg.weight_decay)
     ce = nn.CrossEntropyLoss()
@@ -134,8 +138,8 @@ def run(cfg: TrainConfig, seed: int) -> dict:
     it = batches()
     while step < total_steps:
         x, t = next(it)
-        logits = model(torch.as_tensor(x))
-        loss = ce(logits.reshape(-1, 2), torch.as_tensor(t).reshape(-1))
+        logits = model(torch.as_tensor(x, device=dev))
+        loss = ce(logits.reshape(-1, 2), torch.as_tensor(t, device=dev).reshape(-1))
         opt.zero_grad(); loss.backward(); opt.step()
         running += loss.item(); nrun += 1; step += 1
         if step % cfg.eval_every == 0 or step == total_steps:
@@ -155,6 +159,7 @@ def run(cfg: TrainConfig, seed: int) -> dict:
     row = {"name": cfg.name, "seed": seed, "git": git_hash(), "config": asdict(cfg), "model": mcfg.to_dict(),
            "n_params": n_params(model), "steps": step, "best_step": best["step"],
            "seconds": round(time.time() - t0, 1), "curves": curves}
+    row["device"] = str(dev)
     for tag, state in (("final", final_state), ("best", best["state"] or final_state)):
         model.load_state_dict(state)
         row[f"{tag}_natural"] = evaluate(model, *test_nat, cfg.n, full=True)

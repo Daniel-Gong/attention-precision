@@ -1,8 +1,8 @@
 """Run LLM studies (L5 intervene, L7 locate, L2/L3 if needed) on Modal GPUs, one container per model.
 
 Run from the repo root on a machine with a Modal token (Misha login node):
-  modal run scripts/modal_run.py --study intervene               # every model with L3 results
-  modal run scripts/modal_run.py --study locate --models "gpt2 EleutherAI/pythia-410m"
+  modal run scripts/modal_run.py::main --study intervene         # every model with L3 results
+  modal run scripts/modal_run.py::main --study locate --models "gpt2 EleutherAI/pythia-410m"
 
 Inputs are read locally (results/parts/l3_*.jsonl, l2_*.jsonl) and passed to the container;
 each container's output JSONL is written back to results/parts/<prefix>_<model>.jsonl and its
@@ -19,6 +19,7 @@ import modal.exception
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 image = (modal.Image.debian_slim(python_version="3.11")
          .pip_install("torch==2.11.0", "transformers==5.19.0", "numpy", "scipy", "pyyaml", "accelerate")
+         .add_local_dir(str(ROOT / "configs"), "/root/configs")
          .add_local_dir(str(ROOT / "src"), "/root/src"))
 app = modal.App("attention-precision", image=image)
 hf = modal.Volume.from_name("ap-hf-cache", create_if_missing=True)
@@ -62,6 +63,53 @@ def run_small(*a):
 
 def big(model):
     return any(s in model for s in ("6.9b", "7B", "7b"))
+
+
+def _toy(config, sets, n, seeds):
+    """Train toy-model seeds for one N in parallel processes on one GPU; returns the result rows."""
+    import subprocess
+    env = {**os.environ, "PYTHONPATH": "/root/src"}
+    procs = []
+    for s in seeds:
+        out = f"/tmp/toy_s{s}.jsonl"
+        if os.path.exists(out):
+            os.remove(out)
+        cmd = ["python", "-m", "ap.train", f"/root/{config}", "--set", f"n={n}", "threads=1", "device=cuda",
+               *sets, "--seeds", str(s), "--out", out]
+        procs.append((out, subprocess.Popen(cmd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)))
+    rows, logs = "", ""
+    for out, p in procs:
+        logs += p.communicate()[0][-3000:]
+        if os.path.exists(out):
+            rows += open(out).read()
+    return {"n": n, "out": rows, "log": logs}
+
+
+@app.function(gpu="H100", timeout=12 * 3600, cpu=16)
+def run_toy(*a):
+    return _toy(*a)
+
+
+@app.local_entrypoint()
+def toy(tag: str, sets: str, ns: str = "1 2 3 4 5 6", seeds: str = "0-9", config: str = "configs/sweep.yaml"):
+    """modal run scripts/modal_run.py::toy --tag e9-selective-512 --sets "model.family=selective model.state=512"
+    One H100 container per N; the seeds of that N train in parallel processes. Output:
+    results/parts/<tag>_n<N>_modal.jsonl."""
+    os.chdir(ROOT)
+    a, _, b = seeds.partition("-")
+    seed_list = list(range(int(a), int(b) + 1)) if b else [int(a)]
+    sets_l = [f"name={tag}", *sets.split()]
+    calls = {int(n): run_toy.spawn(config, sets_l, int(n), seed_list) for n in ns.split()}
+    for n, c in calls.items():
+        try:
+            r = c.get()
+        except Exception as e:
+            print(f"{tag} N={n}: FAILED {type(e).__name__}: {e}", flush=True)
+            continue
+        open(f"logs/modal_toy_{tag}_n{n}.log", "w").write(r["log"])
+        with open(f"results/parts/{tag}_n{n}_modal.jsonl", "a") as f:
+            f.write(r["out"])
+        print(f"{tag} N={n}: {len(r['out'].splitlines())} rows", flush=True)
 
 
 @app.local_entrypoint()
