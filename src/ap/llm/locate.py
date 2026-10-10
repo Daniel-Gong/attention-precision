@@ -6,8 +6,9 @@ For each model and N, using the top-k N-back heads from L3 and the L2 test seque
   1. Score every test item (logit m minus logit -), threshold at the L2 calibration value.
   2. At each item's letter token, record the top heads' attention to the letter at i - N,
      to the lure letters at i - N +- 1, and the heads' outputs.
-  3. Locate test: an item is "located" when the heads' mean attention on i - N reaches
-     half the mean seen on correctly answered match items.
+  3. Locate test: an item is "located" when the heads give the whole line of item i - N
+     (letter, answer, newline) at least as much attention as either neighbouring line
+     (i - N - 1, i - N + 1). This does not depend on the heads' absolute attention level.
   4. Readout test: a logistic probe trained on correctly answered items predicts the
      match label from the concatenated head outputs; applied to error items it tells
      whether the heads' output still carried the right answer.
@@ -48,30 +49,36 @@ def l2_threshold(l2_path, model, n):
 
 @torch.no_grad()
 def collect(model, tok, n, x, t, demos, heads, device, batch=16):
+    """Per item i >= n and per head: attention from item i's letter token to the whole line of
+    item j (letter, answer and newline tokens) for j = i-n-1, i-n, i-n+1 (offsets -1, 0, +1).
+    Returns scores (B, L), line attention (B, L-n, 3, k) and head outputs (B, L-n, k*dh)."""
     layers = sorted({l for l, _ in heads})
-    scores, att_t, att_l, outs = [], [], [], []
+    scores, att, outs = [], [], []
     for s in range(0, len(x), batch):
         built = [build(tok, n, x[b], t[b], demos) for b in range(s, min(s + batch, len(x)))]
         ids = torch.tensor([b.ids for b in built], device=device)
-        lp = np.array(built[0].letter_pos)
+        lp = np.array(built[0].letter_pos); span = int(lp[1] - lp[0])
         with control(record_layers=layers, cache_outputs=True) as c:
             logits = model(ids).logits.float()
         b0 = built[0]
         scores.append((logits[:, lp, b0.m_id] - logits[:, lp, b0.dash_id]).cpu().numpy())
         q = lp[n:]
-        at = np.stack([c.attn[l][:, h][:, q, lp[:-n]].numpy() for l, h in heads], -1)        # (B, L-n, k)
-        lm = np.stack([c.attn[l][:, h][:, q, lp[:-n] + 0].numpy() * 0 for l, h in heads], -1)
-        lure = []
-        for d in (n - 1, n + 1):
-            if d < 1:
-                continue
-            idx = np.array([lp[i - d] if i - d >= 0 else lp[i] for i in range(n, len(lp))])
-            lure.append(np.stack([c.attn[l][:, h][:, q, idx].numpy() for l, h in heads], -1))
-        att_t.append(at)
-        att_l.append(np.max(np.stack(lure), 0) if lure else lm)
+        per_off = []
+        for off in (-1, 0, 1):
+            cols = []
+            for i in range(n, len(lp)):
+                j = i - n + off
+                cols.append(np.arange(lp[j], lp[j] + span) if 0 <= j < i else None)
+            hs = []
+            for l, h in heads:
+                A = c.attn[l][:, h]                                         # (B, T, T)
+                hs.append(np.stack([A[:, lp[i], cols[i - n]].sum(-1).numpy() if cols[i - n] is not None
+                                    else np.full(A.shape[0], np.nan) for i in range(n, len(lp))], 1))
+            per_off.append(np.stack(hs, -1))                                # (B, L-n, k)
+        att.append(np.stack(per_off, 2))                                    # (B, L-n, 3, k)
         outs.append(torch.cat([c.outputs[l][:, torch.as_tensor(q, device=device), h].float().cpu()
-                               for l, h in heads], -1).numpy())                          # (B, L-n, k*dh)
-    return np.concatenate(scores), np.concatenate(att_t), np.concatenate(att_l), np.concatenate(outs)
+                               for l, h in heads], -1).numpy())
+    return np.concatenate(scores), np.concatenate(att), np.concatenate(outs)
 
 
 def probe(Xtr, ytr, Xte, epochs=300, wd=1e-3):
@@ -88,12 +95,13 @@ def probe(Xtr, ytr, Xte, epochs=300, wd=1e-3):
         return (Xte @ w + b).numpy()
 
 
-def analyse(n, x, t, l, sc, att_t, att_l, outs, thr):
+def analyse(n, x, t, l, sc, att, outs, thr):
     T = t[:, n:].astype(bool); P = sc[:, n:] > thr; Lu = l[:, n:] > 0
-    A = att_t.mean(-1); AL = att_l.mean(-1)
+    A = np.nanmean(att, -1)                                   # (B, L-n, 3): offsets -1, 0, +1, mean over heads
+    a_m1, a_t, a_p1 = A[..., 0], A[..., 1], A[..., 2]
+    nb = np.fmax(np.nan_to_num(a_m1, nan=-1), np.nan_to_num(a_p1, nan=-1))
+    located = a_t >= nb                                       # target line gets at least as much as either neighbour
     correct, err = P == T, P != T
-    ref = A[correct & T].mean()
-    located = A >= 0.5 * ref
     rng = np.random.default_rng(0)
     idx = np.argwhere(correct); rng.shuffle(idx)
     tr = idx[: min(len(idx), 4000)]
@@ -103,17 +111,18 @@ def analyse(n, x, t, l, sc, att_t, att_l, outs, thr):
     pz = probe(X[flat(tr)], T[tr[:, 0], tr[:, 1]].astype(np.float32), X[flat(ei)]) if len(ei) else np.array([])
     probe_right = (pz > 0) == T[ei[:, 0], ei[:, 1]] if len(ei) else np.array([], bool)
     loc_e = located[ei[:, 0], ei[:, 1]] if len(ei) else np.array([], bool)
-    kinds = {"miss": T & err, "false_alarm": ~T & err, "lure_false_alarm": ~T & err & Lu}
-    out = {"n_items": int(T.size), "n_errors": int(err.sum()), "ref_target_att": float(ref),
-           "target_att": {k: float(A[m].mean()) if m.any() else None for k, m in
-                          {"correct_match": correct & T, "correct_nonmatch": correct & ~T, **kinds}.items()},
-           "lure_att": {k: float(AL[m].mean()) if m.any() else None for k, m in
-                        {"correct_nonmatch": correct & ~T, **kinds}.items()},
+    cats = {"correct_match": correct & T, "correct_nonmatch": correct & ~T, "miss": T & err,
+            "false_alarm": ~T & err, "lure_false_alarm": ~T & err & Lu, "lure_correct_reject": ~T & correct & Lu}
+    line = lambda m: {k: (float(np.nanmean(v[m])) if m.any() else None) for k, v in
+                      {"target": a_t, "minus1": a_m1, "plus1": a_p1}.items()}
+    out = {"n_items": int(T.size), "n_errors": int(err.sum()),
+           "line_attention": {k: line(m) for k, m in cats.items()},
+           "located_rate": {k: (float(located[m].mean()) if m.any() else None) for k, m in cats.items()},
            "error_split": {"mislocated": float((~loc_e).mean()) if len(loc_e) else None,
                            "located_probe_right": float((loc_e & probe_right).mean()) if len(loc_e) else None,
                            "located_probe_wrong": float((loc_e & ~probe_right).mean()) if len(loc_e) else None}}
-    for kind, m in kinds.items():
-        sel = m[ei[:, 0], ei[:, 1]] if len(ei) else np.array([], bool)
+    for kind in ("miss", "false_alarm", "lure_false_alarm"):
+        sel = cats[kind][ei[:, 0], ei[:, 1]] if len(ei) else np.array([], bool)
         if sel.any():
             out[f"split_{kind}"] = {"mislocated": float((~loc_e[sel]).mean()),
                                     "located_probe_right": float((loc_e[sel] & probe_right[sel]).mean()),
@@ -139,8 +148,8 @@ def main():
     for n in a.ns:
         heads = top_heads(a.l3, a.model, n, a.k)
         demos, _, (x, t, l) = make_sets(n, a.n_seq, 200, 3)     # same test set as L2
-        sc, at, al, outs = collect(model, tok, n, x, t, demos, heads, device)
-        res = analyse(n, x, t, l, sc, at, al, outs, l2_threshold(a.l2, a.model, n))
+        sc, att, outs = collect(model, tok, n, x, t, demos, heads, device)
+        res = analyse(n, x, t, l, sc, att, outs, l2_threshold(a.l2, a.model, n))
         row = {"model": a.model, "n": n, "heads": heads, **res}
         with open(a.out, "a") as f:
             f.write(json.dumps(row) + "\n")

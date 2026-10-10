@@ -177,9 +177,11 @@ def test_locate_pipeline_on_random_model(tmp_path):
     heads = Lc.top_heads(str(tmp_path / "l3.jsonl"), "m", 2, 5)
     assert heads == [(1, 2), (0, 1)]
     demos, _, (x, t, l) = make_sets(n, 12, 4, 1)
-    sc, at, al, outs = Lc.collect(model, tok, n, x, t, demos, heads, "cpu", batch=4)
-    assert sc.shape == x.shape and at.shape == (12, 24 - n, 2) and outs.shape == (12, 24 - n, 2 * 8)
-    res = Lc.analyse(n, x, t, l, sc, at, al, outs, 0.0)
+    sc, att, outs = Lc.collect(model, tok, n, x, t, demos, heads, "cpu", batch=4)
+    assert sc.shape == x.shape and att.shape == (12, 24 - n, 3, 2) and outs.shape == (12, 24 - n, 2 * 8)
+    # target-line attention of a head is a probability mass over the 3-4 tokens of that line
+    assert np.nanmax(att) <= 1.0 + 1e-5 and np.nanmin(att) >= 0
+    res = Lc.analyse(n, x, t, l, sc, att, outs, 0.0)
     split = res["error_split"]
     if res["n_errors"]:
         assert abs(sum(split.values()) - 1) < 1e-6
