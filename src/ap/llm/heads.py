@@ -132,6 +132,7 @@ def exact_patching(model, tok, n, clean, corrupt, items, demos, device, heads, b
     """Patch each head's clean output into the corrupt run at the query position; report the
     recovered fraction of the clean - corrupt logit difference."""
     out = {h: [] for h in heads}
+    gaps = []
     for s in range(0, len(clean), batch):
         sl = slice(s, s + batch)
         tc = np.zeros_like(clean[sl], dtype=np.int64)
@@ -148,8 +149,14 @@ def exact_patching(model, tok, n, clean, corrupt, items, demos, device, heads, b
             pos_mask[torch.arange(len(items[sl])), torch.as_tensor(lp[items[sl]])] = True
             with control(patch={(l, h): src}, patch_positions=pos_mask):
                 ld_p = logit_diff(model(ids_x).logits.float(), lp, items[sl], b)
-            out[(l, h)].append(((ld_p - ld_x) / (ld_c - ld_x).clamp(min=1e-3)).cpu().numpy())
-    return {f"{l}.{h}": float(np.concatenate(v).mean()) for (l, h), v in out.items()}
+            out[(l, h)].append((ld_p - ld_x).cpu().numpy())
+        gaps.append((ld_c - ld_x).cpu().numpy())
+    # Recovered fraction of the mean clean - corrupt gap. A per-pair ratio is unstable when a
+    # pair's gap is near zero (seen at early Pythia checkpoints), so the ratio is taken of means.
+    gap = float(np.concatenate(gaps).mean())
+    if abs(gap) < 0.1:
+        return {f"{l}.{h}": float("nan") for (l, h) in out}
+    return {f"{l}.{h}": float(np.concatenate(v).mean()) / gap for (l, h), v in out.items()}
 
 
 def main():
