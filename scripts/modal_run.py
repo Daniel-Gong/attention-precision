@@ -31,18 +31,21 @@ STUDY = {  # study -> (module, output prefix, extra args)
     "behave": ("ap.llm.behave", "l2", []),
     "suppress": ("ap.llm.suppress", "l5s", []),
     "probe": ("ap.llm.probe_lure", "l8", ["--l3", "/tmp/l3.jsonl", "--l2", "/tmp/l2.jsonl"]),
+    "boot": ("ap.llm.boot", "b1", ["--l3", "/tmp/l3.jsonl", "--scores-dir", "/tmp/scores"]),
 }
 
 
 def _run(study, model, dtype, batch, l3_text, l2_text, extra):
     import subprocess
     mod, _, args = STUDY[study]
+    import shutil
     if os.path.exists("/tmp/out.jsonl"):          # warm containers are reused across calls
         os.remove("/tmp/out.jsonl")
+    shutil.rmtree("/tmp/scores", ignore_errors=True)
     open("/tmp/l3.jsonl", "w").write(l3_text)
     open("/tmp/l2.jsonl", "w").write(l2_text)
     cmd = ["python", "-m", mod, "--model", model, "--dtype", dtype, "--out", "/tmp/out.jsonl", *args, *extra]
-    if study in ("intervene", "behave", "suppress", "probe"):
+    if study in ("intervene", "behave", "suppress", "probe", "boot"):
         cmd += ["--batch", str(batch)]
     env = {**os.environ, "PYTHONPATH": "/root/src", "HF_HOME": "/cache"}
     p = subprocess.run(cmd, env=env, capture_output=True, text=True)
@@ -50,7 +53,12 @@ def _run(study, model, dtype, batch, l3_text, l2_text, extra):
     import json
     out = open("/tmp/out.jsonl").read() if os.path.exists("/tmp/out.jsonl") else ""
     out = "".join(l + "\n" for l in out.splitlines() if l.strip() and json.loads(l).get("model") == model)
-    return {"model": model, "returncode": p.returncode, "out": out, "log": (p.stdout + p.stderr)[-20000:]}
+    files = {}
+    if os.path.isdir("/tmp/scores"):
+        for fn in os.listdir("/tmp/scores"):
+            files[fn] = open(os.path.join("/tmp/scores", fn), "rb").read()
+    return {"model": model, "returncode": p.returncode, "out": out, "files": files,
+            "log": (p.stdout + p.stderr)[-20000:]}
 
 
 @app.function(gpu="H100", timeout=12 * 3600, volumes={"/cache": hf})
@@ -168,6 +176,9 @@ def main(study: str = "intervene", models: str = "", model_list: str = "configs/
             if r["out"]:
                 with open(f"results/parts/{prefix}_{mtag}.jsonl", "a") as f:
                     f.write(r["out"])
+            for fn, data in r.get("files", {}).items():
+                os.makedirs(f"results/scores/{study}", exist_ok=True)
+                open(f"results/scores/{study}/{fn}", "wb").write(data)
             print(f"{r['model']} {' '.join(jobs[i][3])}: exit {r['returncode']}, {len(r['out'].splitlines())} rows", flush=True)
         if pending:
             __import__("time").sleep(20)

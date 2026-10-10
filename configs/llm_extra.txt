@@ -1,0 +1,2 @@
+# model  dtype  batch   (robustness: larger models; no L3 results, so head conditions are skipped)
+Qwen/Qwen2.5-14B           bfloat16 8

@@ -298,3 +298,16 @@ def test_probe_lure_on_random_model():
     res = PL.analyse(n, t, l, sc, 0.0, feats, outs, "cpu")
     assert set(res["sites"]) == {"site0", "site1", "site2", "heads"}
     assert 0 <= res["sites"]["heads"]["auc"] <= 1 and res["n_lure"] > 0
+
+
+def test_boot_on_random_model(tmp_path, monkeypatch):
+    import json, sys
+    from ap.llm import boot as B
+    import numpy as np
+    t = np.array([[0, 0, 1, 0, 1, 1]]*4, bool); sc = np.where(t, 1.0, -1.0); sc[0, 2] = -1
+    idx = np.random.default_rng(0).integers(0, 4, size=(50, 4))
+    d = B.boot_dprime(sc, t, 0.0, 2, idx)
+    assert d.shape == (50,) and np.isfinite(d).all()
+    full = B.boot_dprime(sc, t, 0.0, 2, np.arange(4)[None])[0]
+    from ap.metrics import dprime
+    assert abs(full - dprime(5, 6, 0, 2)) < 1e-9
