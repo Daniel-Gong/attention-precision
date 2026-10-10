@@ -55,17 +55,21 @@ def toy_rows(parts):
     rows = []
     for p in sorted(glob.glob(os.path.join(parts, "*.jsonl"))):
         name = os.path.basename(p)
-        if re.match(r"(l\d|l6_)", name):
+        if re.match(r"(l\d|l6_|b1)", name):
             continue
         for line in open(p):
             if line.strip():
-                rows.append(json.loads(line))
+                r = json.loads(line)
+                if "best_natural" in r or "per_n" in r:
+                    rows.append(r)
     return rows
 
 
 def summarise_toy(rows):
     g = defaultdict(list)
     for r in rows:
+        if "best_natural" not in r:
+            continue
         g[(r["name"], r["config"]["n"])].append(r)
     out = []
     for (name, n), rs in sorted(g.items()):
@@ -159,6 +163,51 @@ def l6_heads(rows):
     return out
 
 
+def e10(rows):
+    g = defaultdict(list)
+    for r in rows:
+        if "per_n" not in r:
+            continue
+        for n, v in r["per_n"].items():
+            g[(r["name"], int(n))].append(v)
+    out = []
+    for (name, n), vs in sorted(g.items()):
+        d = {"tag": name, "n": n, "runs": len(vs)}
+        for split in ("natural", "lure"):
+            for k in ("dprime", "acc", "hit", "fa", "fa_nonlure", "fa_lure_1", "fa_lure_2"):
+                v = ms([x.get(split, {}).get(k) for x in vs])
+                if v:
+                    d[f"{split}_{k}"] = v
+        out.append(d)
+    return out
+
+
+def agg_rows(rows, keys, vals):
+    g = defaultdict(list)
+    for r in rows:
+        g[tuple(r.get(k) for k in keys)].append(r)
+    out = []
+    for key, rs in sorted(g.items(), key=lambda kv: str(kv[0])):
+        d = dict(zip(keys, key)); d["count"] = len(rs)
+        for v in vals:
+            m = ms([r.get(v) for r in rs if isinstance(r.get(v), (int, float))])
+            if m:
+                d[v] = m
+        out.append(d)
+    return out
+
+
+def l3(rows):
+    out = []
+    for r in rows:
+        pt = {h: v for h, v in r.get("patch_top", {}).items() if v == v}
+        top = sorted(pt.items(), key=lambda kv: -kv[1])[:10]
+        out.append({"model": r["model"], "n": r["n"], "revision": r.get("revision"),
+                    "ld_clean": r.get("logit_diff_clean"), "ld_corrupt": r.get("logit_diff_corrupt"),
+                    "top_patch": top})
+    return out
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--parts", default="results/parts")
@@ -171,7 +220,30 @@ def main():
     summary = {"toy": summarise_toy(rows), "e1_seeds": e1_seeds(rows), "e1_curves": e1_curves(rows),
                "l1": l1(a.parts), "l2": l2,
                "l6_behave": read_jsonl(os.path.join(a.parts, "l6_behave_*.jsonl")),
-               "l6_heads": l6_heads(read_jsonl(os.path.join(a.parts, "l6_heads_*.jsonl")))}
+               "l6_heads": l6_heads(read_jsonl(os.path.join(a.parts, "l6_heads_*.jsonl"))),
+               "e10": e10(rows),
+               "l3": l3(read_jsonl(os.path.join(a.parts, "l3_*.jsonl"))),
+               "l5": [{k: r.get(k) for k in ("model", "n", "arm", "k", "tau", "draw", "dprime", "hit", "fa", "auc")}
+                      for r in read_jsonl(os.path.join(a.parts, "l5_*.jsonl"))],
+               "l5s": [r for r in read_jsonl(os.path.join(a.parts, "l5s_*.jsonl")) if r.get("cond") != "xiong"],
+               "l7": read_jsonl(os.path.join(a.parts, "l7_*.jsonl")),
+               "l8": read_jsonl(os.path.join(a.parts, "l8_*.jsonl")),
+               "b1": read_jsonl(os.path.join(a.parts, "b1_*.jsonl"))}
+    BEH2 = ["dprime", "hit", "fa", "acc", "fa_nonlure", "fa_lure_1"]
+    if os.path.exists("results/e6_circuits.jsonl"):
+        e6 = read_jsonl("results/e6_circuits.jsonl")
+        for r in e6:
+            r["on_match"] = 1.0 if r.get("solution") == "attend-on-match" else 0.0
+            for k, v in (r.pop("term_shares", {}) or {}).items():
+                r[f"share_{k}"] = v
+            r.pop("pos_profile", None); r.pop("readout_std", None)
+        summary["e6"] = agg_rows(e6, ["tag", "n"], ["on_match", "target_att_match", "target_att_nonmatch",
+                                                    "share_EE", "share_PP", "share_EP", "share_PE",
+                                                    "delta_content", "delta_pos"])
+    if os.path.exists("results/e1_interventions.jsonl"):
+        summary["e7"] = agg_rows(read_jsonl("results/e1_interventions.jsonl"), ["n", "set", "cond", "value"], BEH2)
+    if glob.glob("results/e7_oracle2/*.jsonl"):
+        summary["e7b"] = agg_rows(read_jsonl("results/e7_oracle2/*.jsonl"), ["n", "set", "cond", "value"], BEH2)
     s = json.dumps(r4(summary), separators=(",", ":"))
     open(a.out, "w").write(s)
     print(f"toy rows {len(rows)}, summary {len(s) / 1e3:.0f} kB -> {a.out}")
