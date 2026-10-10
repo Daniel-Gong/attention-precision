@@ -79,9 +79,12 @@ def main():
             for tau in (0.8, 0.67):
                 full(f"sharpen-top3@{tau}", {"temps": {h: tau for h in top3}})
             means = I.mean_head_outputs(model, tok, n, xc, tc, demos, device)
-            rnd = I.matched_random(top10, nh, np.random.default_rng(100 + n * 10 + 10), set(top10))
             full("ablate-top10", {"ablate": {h: means[h[0], h[1]] for h in top10}})
-            full("ablate-random10", {"ablate": {h: means[h[0], h[1]] for h in rnd}})
+            try:
+                rnd = I.matched_random(top10, nh, np.random.default_rng(100 + n * 10 + 10), set(top10))
+                full("ablate-random10", {"ablate": {h: means[h[0], h[1]] for h in rnd}})
+            except ValueError:                       # a layer has no spare heads to draw from
+                pass
         spaces = S.fit_subspaces(model, tok, n, xc, tc, demos, device)
         for name, sp, alpha in (("suppress@0.5", spaces, 0.5), ("suppress@1", spaces, 1.0),
                                 ("suppress-random@1", S.random_spaces(spaces), 1.0)):
