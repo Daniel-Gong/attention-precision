@@ -2,7 +2,7 @@
 
 Code for the full paper extending *Self-attention limits working memory capacity of
 transformer-based models* (Gong & Zhang, NeurIPS 2024 Behavioral ML workshop,
-[arXiv 2409.10715](https://arxiv.org/abs/2409.10715)).
+[arXiv 2409.10715](https://arxiv.org/abs/2409.10715)) and *Working Memory Capacity of ChatGPT: An Empirical Study* (Gong, Wan, & Wang, AAAI 2024,[arXiv 2305.03731](https://arxiv.org/abs/2305.03731)).
 
 **Thesis.** Working-memory limits on the N-back task come from the precision of
 position-based retrieval under softmax attention. The repo has three parts: theory
