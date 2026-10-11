@@ -64,9 +64,11 @@ Done 2026-10-10 (second session):
   (notably: Cor. 1 gives equal means, not equal distributions; Prop. 4 allows lure-dependent distractor bias).
   Main text now ends on page 9 (limit reached).
 
-Still open:
-1. Misha checkout is behind origin and has an untracked results/summary.json that blocks `git pull`
-   (move it aside first).
+- Misha checkout fast-forwarded to origin/main; its old untracked summary.json is kept at
+  results/partial/summary_before_pull_2026-10-10.json. `summarize_all.py` on Misha reproduces the committed
+  results/summary.json exactly.
+
+No open items.
 
 ## Gotchas learned
 - Modal warm containers can mix outputs across models — `_run` clears /tmp outputs and filters rows by model.
