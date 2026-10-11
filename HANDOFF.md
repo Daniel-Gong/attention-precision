@@ -25,7 +25,7 @@ does not predict d′ but the attention mass gap does (T2, ρ = 0.62).
   target suppression −1.54. Wilcoxon p < 1e−8. Degenerate cells excluded: Pythia-70m, GPT-2 XL at N = 4.
 - L5x (Xiong et al. replication): held-out +0.11, best-in-sweep +0.12 — much smaller than ours.
 - L7: heads locate target on 88–91% of correct matches; misses with attention elsewhere 6–15%.
-- L8: probe calls 86–95% of the model's own lure FAs "lure".
+- L8: probe calls 86–95% of the model's own lure FAs "lure" (15 models incl. Qwen2.5-14B).
 - Toy: E1 2.67 → 2.15; E5 sigmoid/top-k flatten decline; E3b/E10 depth removes it; E9 linear attn declines;
   E6 position margin doesn't shrink with N; E7b every attention edit lowers d′.
 
@@ -48,10 +48,11 @@ Done 2026-10-10 (second session):
   paragraph (ablation cost shrinks with size, ρ = 0.68, p = 0.007; suppression gain grows, ρ = 0.57, p = 0.03).
 - Compute: `\gpuhours` = 51 (Misha H100 13.2 via `scripts/compute_hours.sh`; Modal B200 13.0, H100 12.2,
   L40S 13.0 from the usage dashboard, Oct 2026 dollars / list rate). Misha CPU ≈ 1,060 core-hours.
-- Launched L3 + L8 for Qwen2.5-14B on Modal (tmux `q14` on Misha; logs/modal_l3_q14.out, logs/modal_l8_q14.out).
+- L3 + L8 for Qwen2.5-14B run on Modal B200 (logs/modal_l3_q14.out, logs/modal_l8_q14.out on Misha): probe AUC
+  1.00 / 0.997 vs model 0.81 / 0.64; 99.8% / 95% of lure FAs called lures. In Table 3, Fig 4 and §6; medians unchanged.
 
 Still open:
-1. Fold the Qwen2.5-14B L8 result into summary.json, Fig 4 / Table 3 and the text once the run finishes.
+1. Optional: L5 sharpening/ablation and B1 for Qwen2.5-14B are now possible (its L3 heads exist).
 2. xiong2026superposition: arXiv lists it as COLM 2026; bib still cites the preprint.
 3. ~1.5 pages of spare main-text room remain (theory P1–P3 expansion is the main candidate).
 4. Misha checkout is behind origin and has an untracked results/summary.json that blocks `git pull`
