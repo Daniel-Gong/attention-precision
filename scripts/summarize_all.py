@@ -52,7 +52,8 @@ def solution(b):
 
 
 def toy_rows(parts):
-    rows = []
+    """Toy runs, one per (tag, N, seed): a seed that was run again (resubmitted task) keeps its last row."""
+    rows = {}
     for p in sorted(glob.glob(os.path.join(parts, "*.jsonl"))):
         name = os.path.basename(p)
         if re.match(r"(l\d|l6_|b1)", name):
@@ -61,8 +62,14 @@ def toy_rows(parts):
             if line.strip():
                 r = json.loads(line)
                 if "best_natural" in r or "per_n" in r:
-                    rows.append(r)
-    return rows
+                    rows[(r["name"], r["config"].get("n"), r.get("seed"))] = r
+    runs = defaultdict(lambda: defaultdict(int))
+    for name, n, _ in rows:
+        runs[name][n] += 1
+    for name, by_n in sorted(runs.items()):
+        if len(set(by_n.values())) > 1:
+            print(f"warning: {name} has unequal run counts across N: {dict(by_n)}")
+    return list(rows.values())
 
 
 def summarise_toy(rows):

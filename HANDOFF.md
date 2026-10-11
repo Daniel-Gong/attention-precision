@@ -39,12 +39,23 @@ does not predict d′ but the attention mass gap does (T2, ρ = 0.62).
 - Figures: `python scripts/figures.py` → `figures/`. Tables: `python scripts/paper_tables.py` → `paper/tables/`.
 
 ## Open items (next steps)
-1. Fill in total GPU-hours in the appendix / checklist (currently a placeholder "~400 GPU-hours").
-2. Verify bib entries in `paper/refs.bib` (several use "and others"; check arXiv IDs of 2026 papers).
-3. Deduplicate e9-selective-512 rows (13 runs found, expected 10) in summarize/figures.
-4. Fig 3: smallest-model labels missing.
-5. ~2 pages of spare main-text room — candidates: theory (P1–P3) expansion, Qwen-14B suppression detail.
-6. Optional: L8 for Qwen2.5-14B.
+Done 2026-10-10 (second session):
+- Bib verified against arXiv/ACL/OpenReview/Crossref; 11 entries fixed (full authors, published venues). None hallucinated.
+- `summarize_all.py` keeps one row per (tag, N, seed) and warns on unequal run counts across N; `summary.json`
+  regenerated on Misha (only E9 selective-512 changed: 10 seeds per N; N = 1 d′ 8.12 → 8.15).
+- Fig 3 smallest-model labels fixed (they were clipped: d′ < 0 at N = 6); Fig 3 no longer double-counts L2 rows.
+- Spare room used for Fig 2 d–f (position margin vs mass gap, 300 E1 checkpoints) and Fig 5b + a "Scale"
+  paragraph (ablation cost shrinks with size, ρ = 0.68, p = 0.007; suppression gain grows, ρ = 0.57, p = 0.03).
+- Compute: `\gpuhours` = 51 (Misha H100 13.2 via `scripts/compute_hours.sh`; Modal B200 13.0, H100 12.2,
+  L40S 13.0 from the usage dashboard, Oct 2026 dollars / list rate). Misha CPU ≈ 1,060 core-hours.
+- Launched L3 + L8 for Qwen2.5-14B on Modal (tmux `q14` on Misha; logs/modal_l3_q14.out, logs/modal_l8_q14.out).
+
+Still open:
+1. Fold the Qwen2.5-14B L8 result into summary.json, Fig 4 / Table 3 and the text once the run finishes.
+2. xiong2026superposition: arXiv lists it as COLM 2026; bib still cites the preprint.
+3. ~1.5 pages of spare main-text room remain (theory P1–P3 expansion is the main candidate).
+4. Misha checkout is behind origin and has an untracked results/summary.json that blocks `git pull`
+   (move it aside first).
 
 ## Gotchas learned
 - Modal warm containers can mix outputs across models — `_run` clears /tmp outputs and filters rows by model.

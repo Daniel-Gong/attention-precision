@@ -18,6 +18,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import to_rgb
+from scipy.stats import spearmanr
 
 # reference categorical palette (dataviz skill), fixed order; text and grid tokens
 C = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948"]
@@ -57,7 +58,10 @@ def size_t(m, fam_models):
 
 
 def end_label(ax, x, y, text, color, dy=0):
-    ax.annotate(text, (x, y), xytext=(4, dy), textcoords="offset points", va="center", fontsize=7, color=INK)
+    lo, hi = ax.get_ylim()                      # keep the anchor inside the axes so the label is not clipped
+    y = min(max(y, lo + 0.06 * (hi - lo)), hi - 0.04 * (hi - lo))
+    ax.annotate(text, (x, y), xytext=(4, dy), textcoords="offset points", va="center", fontsize=7, color=INK,
+                annotation_clip=False)
 
 
 def save(fig, out, name):
@@ -84,8 +88,25 @@ def series(ax, arr, color, label, marker="o", ls="-", direct=True, dy=0):
         end_label(ax, arr[-1, 0], arr[-1, 1], label, color, dy)
 
 
+def e1_checkpoints(S, e6_path="results/e6_slim.json"):
+    """E1 checkpoints joined with their E6 logit decomposition: (n, d', delta_P, |mass gap|, attend-on-match)."""
+    if not os.path.exists(e6_path):
+        return None
+    E = json.load(open(e6_path))
+    rows = [(r["n"], r["dprime"], e["dP"], abs(e["tam"] - e["tanm"]), e["on"])
+            for r in S["e1_seeds"] if (e := E.get(f"e1|{r['n']}|{r['seed']}"))]
+    return np.array(rows, float) if rows else None
+
+
+def spearman(x, y):
+    return float(spearmanr(x, y)[0])
+
+
 def fig2(S, out):
-    fig, axs = plt.subplots(1, 3, figsize=(7.2, 2.3), sharey=False)
+    ck = e1_checkpoints(S)
+    fig, grid = plt.subplots(2 if ck is not None else 1, 3, figsize=(7.2, 4.7 if ck is not None else 2.3),
+                             squeeze=False)
+    axs = grid[0]
     ax = axs[0]
     e1 = toy_curve(S, "e1")
     series(ax, e1, C[0], "1-layer, softmax", direct=False)
@@ -109,12 +130,36 @@ def fig2(S, out):
     ax.set_xlabel("N"); ax.set_ylim(0, 8.5); ax.set_xlim(0.7, 8.2)
     for ax in axs:
         ax.set_xticks(range(1, 7))
-    fig.tight_layout(w_pad=1.2)
+    if ck is not None:
+        lo, hi = np.array(to_rgb("#b3cdee")), np.array(to_rgb("#0f3b78"))   # one hue, light (N = 1) to dark (N = 6)
+        nshade = lambda n: tuple(lo + (hi - lo) * (n - 1) / 5)
+        ncol = [nshade(n) for n in ck[:, 0]]
+        for ax, col, lab, letter, title in (
+                (grid[1, 0], 2, r"position margin $\delta_P$ (logit)", "d", "Position margin"),
+                (grid[1, 1], 3, "|target attention, match − non-match|", "e", "Mass gap")):
+            ax.scatter(ck[:, col], ck[:, 1], s=9, c=ncol, linewidths=0.3, edgecolors="white", zorder=3)
+            rho = f"{spearman(ck[:, col], ck[:, 1]):.2f}".replace("-", "−")
+            ax.set_title(f"{letter}  {title} (ρ = {rho})", loc="left")
+            ax.set_xlabel(lab)
+        grid[1, 0].set_ylabel("d′ (one checkpoint)")
+        for n in range(1, 7):
+            grid[1, 1].scatter([], [], s=9, color=nshade(n), label=f"N = {n}")
+        grid[1, 1].legend(loc="upper left", fontsize=6.5, handletextpad=0.1, borderaxespad=0.2, ncol=2,
+                          columnspacing=0.6)
+        ax = grid[1, 2]
+        ns = np.arange(1, 7)
+        share = [ck[ck[:, 0] == n, 4].mean() for n in ns]
+        ax.bar(ns, share, 0.62, color=[nshade(n) for n in ns])
+        ax.set_ylim(0, 1); ax.set_xticks(ns); ax.set_xlabel("N"); ax.set_ylabel("share of seeds")
+        ax.set_title("f  Seeds attending to the match", loc="left"); ax.grid(axis="x", visible=False)
+    fig.tight_layout(w_pad=1.2, h_pad=1.4)
     save(fig, out, "fig2_minimal_models")
 
 
 def l2_rows(S, fmt="lines", cond="feedback"):
-    return [r for r in S["l2"] if (r.get("format") or "lines") == fmt and r["condition"] == cond and r.get("revision") is None]
+    rows = {(r["model"], r["n"]): r for r in S["l2"]          # later rows win (re-run duplicates)
+            if (r.get("format") or "lines") == fmt and r["condition"] == cond and r.get("revision") is None}
+    return list(rows.values())
 
 
 def fig3(S, out):
@@ -134,13 +179,13 @@ def fig3(S, out):
             a = np.array(sorted(by[m]))
             col = shade(FAM[fam], size_t(m, ms))
             ax.plot(a[:, 0], a[:, 1], color=col, marker="o", mec="white", mew=0.6)
-        for m, dy in ((ms[0], -6), (ms[-1], 6)):
+        ax.set_ylim(0, 4.5); ax.set_xlim(0.7, 7.3)
+        for m, dy in ((ms[0], -2), (ms[-1], 6)):
             a = np.array(sorted(by[m]))
             lab = short(m).replace("Qwen2.5-", "").replace("pythia-", "").upper().replace("GPT2-XL", "XL").replace("GPT2", "124M")
             end_label(ax, a[-1, 0], a[-1, 1], lab, None, dy)
         ax.text(0.98, 0.97, "darker = larger", transform=ax.transAxes, ha="right", va="top", fontsize=6.5, color=INK2)
         ax.set_title(titles[fam], loc="left"); ax.set_xlabel("N"); ax.set_xticks(range(1, 7))
-        ax.set_ylim(0, 4.5); ax.set_xlim(0.7, 7.3)
     axs[0].set_ylabel("d′ (feedback condition)")
     ax = axs[3]
     lure, non = defaultdict(list), defaultdict(list)
@@ -229,7 +274,7 @@ def fig5(S, out):
     for r in S["l5s"]:
         if r["cond"] in ("xiong_baseline", "xiong_heldout"):
             xi[(r["model"], r["n"])][r["cond"]] = r["dprime"]
-    fig, ax = plt.subplots(figsize=(5.2, 3.0))
+    fig, (ax, bx) = plt.subplots(1, 2, figsize=(7.4, 3.0), gridspec_kw={"width_ratios": [1.75, 1]})
     rng = np.random.default_rng(0)
     for y, (c, lab, col) in enumerate(conds):
         if c == "xiong":
@@ -245,13 +290,38 @@ def fig5(S, out):
         ax.scatter(d, yy, s=9, color=col, linewidths=0, zorder=3, alpha=0.85)
         med = np.median(d)
         ax.plot([med, med], [y - 0.34, y + 0.34], color=INK, lw=1.8, zorder=4)
-        ax.text(2.2, y, f"median {med:+.2f}", va="center", fontsize=7, color=INK)
+        ax.text(2.2, y, f"median {med:+.2f}".replace("-", "−"), va="center", fontsize=7, color=INK)
     ax.axvline(0, color=INK2, lw=1)
     ax.set_yticks(range(len(conds)), [l for _, l, _ in conds]); ax.grid(axis="y", visible=False)
     ax.set_xlabel("change in d′ from baseline\n(dot = one model × N, bar = 95% bootstrap CI, black line = median)")
     ax.set_xlim(-2.4, 2.1)
-    ax.set_title("Causal tests, 15 LLMs × N = 2–4", loc="left", fontsize=8.5)
-    fig.tight_layout()
+    ax.set_title("a  Causal tests, 15 LLMs × N = 2–4", loc="left", fontsize=8.5)
+    # b: per-model median over N = 2-4 against size; the head account weakens with scale, interference does not
+    models = sorted({m for m, _ in ok}, key=lambda m: SIZE[short(m)])
+    for c, lab, col, dy in (("suppress@0.5", "suppress distractors", C[2], 0), ("ablate-top10", "ablate top-10 heads", C[7], 0)):
+        pts, fams = [], []
+        for m in models:
+            d = [r["delta"] for r in b if r["cond"] == c and r["model"] == m and (m, r["n"]) in ok]
+            if d:
+                pts.append((SIZE[short(m)], np.median(d))); fams.append(family(m))
+        pts, fams = np.array(pts), np.array(fams)
+        for fam, mk in (("pythia", "o"), ("gpt2", "s"), ("qwen", "^")):
+            sel = fams == fam
+            bx.scatter(pts[sel, 0], pts[sel, 1], s=16, marker=mk, color=col, edgecolors="white", linewidths=0.5, zorder=3)
+        k = np.polyfit(np.log10(pts[:, 0]), pts[:, 1], 1)
+        xs = np.array([pts[:, 0].min(), pts[:, 0].max()])
+        bx.plot(xs, np.polyval(k, np.log10(xs)), color=col, lw=1.2, alpha=0.8)
+        rho = f"{spearman(pts[:, 0], pts[:, 1]):.2f}".replace("-", "−")
+        bx.annotate(f"{lab}\nρ = {rho}", (xs[-1], np.polyval(k, np.log10(xs[-1]))), xytext=(5, dy),
+                    textcoords="offset points", va="center", fontsize=6.5, color=INK, annotation_clip=False)
+    for fam, mk in (("pythia", "o"), ("gpt2", "s"), ("qwen", "^")):
+        bx.scatter([], [], marker=mk, s=16, color=INK2, label={"pythia": "Pythia", "gpt2": "GPT-2", "qwen": "Qwen2.5"}[fam])
+    bx.legend(loc="upper center", bbox_to_anchor=(0.5, -0.25), ncol=3, fontsize=6.5, handletextpad=0.1, columnspacing=0.8)
+    bx.axhline(0, color=INK2, lw=1)
+    bx.set_xscale("log"); bx.set_xlim(0.05, 20)
+    bx.set_xlabel("parameters (billions)"); bx.set_ylabel("median change in d′ (N = 2–4)")
+    bx.set_title("b  Scale weakens the heads, not interference", loc="left", fontsize=8.5)
+    fig.tight_layout(w_pad=1.5)
     save(fig, out, "fig5_causal_tests")
 
 

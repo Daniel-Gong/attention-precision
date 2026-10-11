@@ -115,7 +115,7 @@
 \item {\bf Experiments compute resources}
     \item[] Question: For each experiment, does the paper provide sufficient information on the computer resources (type of compute workers, memory, time of execution) needed to reproduce the experiments?
     \item[] Answer: \answerYes{} % Replace by \answerYes{}, \answerNo{}, or \answerNA{}.
-    \item[] Justification: Appendix~\ref{app:methods} reports compute: CPU cluster for minimal models; single H100 or B200 GPUs per model and N for LLM studies, totalling roughly 400 GPU-hours.
+    \item[] Justification: Appendix~\ref{app:methods} reports compute: mostly a CPU cluster for minimal models; single L40S, H100 or B200 GPUs per model and N for LLM studies; about \gpuhours{} GPU-hours in total, including preliminary and failed runs.
     \item[] Guidelines:
     \begin{itemize}
         \item The answer \answerNA{} means that the paper does not include experiments.

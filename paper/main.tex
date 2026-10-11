@@ -17,6 +17,9 @@
 
 \newtheorem{proposition}{Proposition}
 \newcommand{\dprime}{$d'$}
+% Total GPU-hours: Misha H100 13.2 (scripts/compute_hours.sh) + Modal B200 13.0, H100 12.2, L40S 13.0 (usage dashboard,
+% Oct 2026, dollars / list rate). Used in Appendix B and the checklist.
+\newcommand{\gpuhours}{51}
 
 \title{Transformers Find the Item but Misread It:\\Locating versus Readout in Working Memory}
 
@@ -108,12 +111,12 @@ With two layers, a residual stream and an absolute or rotary position code, a fi
 
 Proofs are in Appendix~\ref{app:theory}. Figure~\ref{fig:minimal} tests the propositions. The one-layer model declines with N (\dprime{} 2.67 to 2.15 over 50 seeds; panel a). Unnormalized sigmoid attention and top-$k$ attention raise and flatten the curve, while scalable softmax does not (panel b), as Proposition~\ref{prop:dispersion} predicts for a normalization-driven limit. With two layers and a residual stream the decline disappears: \dprime{} is 6.4--7.2 at every N with learned positions, 5.4--5.8 with sinusoidal and 4.5--5.9 with rotary codes, and 7.7--7.8 for a single model trained on all N with a cue (panel c); ALiBi and no-position models fail at every N (\dprime{} 1.3--1.8), as Proposition~\ref{prop:depth} predicts.
 
-Is dispersion the binding constraint even in the one-layer model? Decomposing the logits of 720 trained checkpoints, the position margin $\delta_P$ does not shrink as N grows (4.5 at N = 1, 6.7 at N = 5). Across the 300 checkpoints of the main configuration, $\delta_P$ predicts neither lure false alarms (Spearman $\rho=-0.03$) nor \dprime{} ($\rho=-0.05$). What does predict \dprime{} is the difference in target attention between match and non-match trials ($\rho=0.62$; leave-one-N-out $R^2=0.37$), as Proposition~\ref{prop:mass} implies, and at larger N most seeds switch from attending to the matching letter to attending away from it. Consistent with Proposition~\ref{prop:mass}, every post-hoc edit of the attention pattern (an oracle on $i-N$, or removing off-target mass) lowers \dprime{}, because off-target mass is part of the code (Appendix~\ref{app:results}). Precision bounds the minimal model, but the decline is shaped by how content is read out.
+Is dispersion the binding constraint even in the one-layer model? Decomposing the logits of 720 trained checkpoints, the position margin $\delta_P$ does not shrink as N grows (4.5 at N = 1, 6.7 at N = 5). Across the 300 checkpoints of the main configuration, $\delta_P$ predicts neither lure false alarms (Spearman $\rho=-0.03$) nor \dprime{} ($\rho=-0.05$; Fig.~\ref{fig:minimal}d). What does predict \dprime{} is the size of the difference in target attention between match and non-match trials ($\rho=0.62$; leave-one-N-out $R^2=0.37$; panel e), as Proposition~\ref{prop:mass} implies. The sign of that difference changes with N: every seed attends more to the target on match trials at N = 1, but only 48\% do at N = 4 and 18\% at N = 6 (panel f); the rest attend away from a matching letter. Consistent with Proposition~\ref{prop:mass}, every post-hoc edit of the attention pattern (an oracle on $i-N$, or removing off-target mass) lowers \dprime{}, because off-target mass is part of the code (Appendix~\ref{app:results}). Precision bounds the minimal model, but the decline is shaped by how content is read out.
 
 \begin{figure}[t]
   \centering
   \includegraphics[width=\textwidth]{fig2_minimal_models.pdf}
-  \caption{\textbf{Minimal models.} (a) The one-layer, residual-free model declines with N at convergence (50 seeds, $\pm$SEM). (b) Sigmoid and top-$k$ attention flatten the decline; scalable softmax does not. (c) Two layers with a residual stream remove it, for one N per model or all N in one cued model.}
+  \caption{\textbf{Minimal models.} (a) The one-layer, residual-free model declines with N at convergence (50 seeds, $\pm$SEM). (b) Sigmoid and top-$k$ attention flatten the decline; scalable softmax does not. (c) Two layers with a residual stream remove it, for one N per model or all N in one cued model. (d, e) Across 300 one-layer checkpoints (50 seeds $\times$ N = 1--6; darker = larger N), \dprime{} is unrelated to the position margin $\delta_P$ but tracks the absolute difference in target attention between match and non-match trials. (f) Share of seeds whose target attention is higher on match trials.}
   \label{fig:minimal}
 \end{figure}
 
@@ -137,23 +140,25 @@ Is dispersion the binding constraint even in the one-layer model? Decomposing th
 We apply five interventions to all 15 models at N = 2--4, on the same sequences, each with its own calibrated threshold (Fig.~\ref{fig:causal}; Table~\ref{tab:b1}). Intervals are 95\% paired bootstrap intervals over sequences (2,000 resamples); two degenerate cells whose baseline \dprime{} is below 0.3 are excluded.
 \begin{itemize}
   \item \textbf{Ablation.} Mean-ablating the top-10 patching heads lowers \dprime{} in 39 of 40 cells (median $-0.96$); ten random heads from the same layers do not (median $-0.01$). The effect shrinks with scale (Qwen2.5-7B: $-0.27$ to $+0.03$), indicating more distributed solutions.
-  \item \textbf{Sharpening.} Scaling the top-3 heads' logits by $1/\tau$ changes \dprime{} by a median $+0.04$ at $\tau=0.67$ and $+0.04$ at $\tau=0.8$ (range $-0.30$ to $+0.30$); flattening them ($\tau=2$) costs a median 0.38 in the full sweep. Changing the temperature of every head helps most at mild \emph{flattening} ($\tau=1.25$) in 18 of 26 cells. The heads sit near their optimal sharpness.
+  \item \textbf{Sharpening.} Scaling the top-3 heads' logits by $1/\tau$ changes \dprime{} by a median $+0.04$ at $\tau=0.67$ and $+0.03$ at $\tau=0.8$ (range $-0.30$ to $+0.30$); flattening them ($\tau=2$) costs a median 0.38 in the full sweep. Changing the temperature of every head helps most at mild \emph{flattening} ($\tau=1.25$) in 18 of 26 cells. The heads sit near their optimal sharpness.
   \item \textbf{Distractor suppression.} For each query $i$, we remove the 19-dimensional letter-identity subspace (fit on calibration sequences at every residual site) from the whole line of every earlier item except $i-N$, scoring each query on its own prefix. At half strength this raises \dprime{} in 42 of 43 cells (median $+0.60$, up to $+1.78$), including at N = 4 (median $+0.44$) and in Qwen2.5-14B ($1.60\to3.38$ at N = 3). False alarms fall from about 0.2--0.3 to about 0.1 while hits hold. Removing a random subspace of the same rank does nothing (median $-0.03$); removing the target's letter destroys performance (median $-1.54$). Full strength also helps (median $+0.46$) but over-suppresses in Qwen2.5-7B.
   \item \textbf{Replication of \citet{xiong2026superposition}.} One letter-identity direction at one of the two earliest depths, applied at answer positions only, with the configuration chosen on calibration sequences: median $+0.11$ (range $+0.01$ to $+0.30$, 28 cells). The best-of-sweep statistic selected on test data gives $+0.12$, so their effect replicates; it is about a fifth of the effect of targeting the distractor items.
 \end{itemize}
 Across cells, distractor suppression and head ablation differ from zero with Wilcoxon $p<10^{-8}$; sharpening at $\tau=0.67$ does not ($p=0.23$). Distractor suppression is oracle-targeted, since it knows which item is the target, so it is a causal test of interference rather than a usable method.
 
+\textbf{Scale.} The two accounts part ways as models grow (Fig.~\ref{fig:causal}b). Ablating the identified heads costs less in larger models (Spearman $\rho=0.68$ between size and each model's median change, $p=0.007$, 14 models), from about $-1.6$ in the smallest Pythia models to $-0.27$ in Qwen2.5-7B: the solution becomes more distributed. Removing distractor content helps more ($\rho=0.57$, $p=0.03$, 15 models). Qwen2.5-14B, the largest model, shows the pattern most clearly. Half-strength suppression raises its \dprime{} from 2.42 to 2.88, 1.60 to 3.38 and 1.29 to 2.05 at N = 2, 3 and 4, with every bootstrap interval at least 0.40 above zero; a random subspace of the same rank changes it by $-0.10$, $-0.05$ and $+0.18$. With distractor content removed, the model at N = 3 outperforms its own unmodified N = 2 baseline. Scale makes the task less dependent on a few heads, but not less limited by interference.
+
 \begin{figure}[t]
   \centering
-  \includegraphics[width=0.82\textwidth]{fig5_causal_tests.pdf}
-  \caption{\textbf{Causal tests.} Change in \dprime{} from baseline for each intervention; each dot is one model $\times$ N cell with its 95\% bootstrap interval, black lines are medians.}
+  \includegraphics[width=\textwidth]{fig5_causal_tests.pdf}
+  \caption{\textbf{Causal tests.} (a) Change in \dprime{} from baseline for each intervention; each dot is one model $\times$ N cell with its 95\% bootstrap interval, black lines are medians. (b) Each model's median change over N = 2--4 against its size, for distractor suppression (half strength) and top-10 head ablation; lines are least-squares fits in log size.}
   \label{fig:causal}
 \end{figure}
 
 \section{Architectures and development}
 \label{sec:arch}
 
-Recurrent baselines trained on the same stimuli separate two kinds of memory (Fig.~\ref{fig:arch}a,b). LSTM and LRU with a 512-dimensional state solve every N (\dprime{} $\ge7.9$); with a 32-dimensional state the LSTM declines (8.2 to 1.8) while the LRU barely does. Linear attention declines at both sizes, and a selective state-space model, whose gating is input-dependent like attention, declines from 8.1 to 2.9 even with a 512-dimensional state. The decline is not specific to softmax attention; it appears in architectures that retrieve by content-dependent weighting. In Pythia, the top N-back heads and the behaviour appear early in training: \dprime{} at N = 2 rises from chance to near its final value between steps 1,000 and 8,000, alongside previous-token and induction heads (Fig.~\ref{fig:arch}c).
+Recurrent baselines trained on the same stimuli separate two kinds of memory (Fig.~\ref{fig:arch}a,b). LSTM and LRU with a 512-dimensional state solve every N (\dprime{} $\ge7.9$); with a 32-dimensional state the LSTM declines (8.2 to 1.8) while the LRU barely does. Linear attention declines at both sizes, and a selective state-space model, whose gating is input-dependent like attention, declines from 8.2 to 2.9 even with a 512-dimensional state. The decline is not specific to softmax attention; it appears in architectures that retrieve by content-dependent weighting. In Pythia, the top N-back heads and the behaviour appear early in training: \dprime{} at N = 2 rises from chance to near its final value between steps 1,000 and 8,000, alongside previous-token and induction heads (Fig.~\ref{fig:arch}c).
 
 \begin{figure}[t]
   \centering
@@ -167,7 +172,7 @@ Recurrent baselines trained on the same stimuli separate two kinds of memory (Fi
 
 Pretrained transformers locate the item N back: content-addressed heads land on the target line, and the residual stream encodes whether the matching letter sat at $i-N$ or at a lure position. They fail in readout, where the content of other items interferes with the decision. Sharpening attention cannot fix this; removing the interfering content largely does. The precision account is not wrong so much as narrow: it describes a one-layer, residual-free model, and depth removes it. This places transformer working memory closer to interference accounts of human working memory than to fixed-slot or attention-bottleneck accounts \citep{ma2014changing,engle2002executive}, and suggests that training or architectural changes that separate item content from the decision variable, rather than sharper attention, are the lever for improving it.
 
-\textbf{Limitations.} We study one task family (letter N-back) with synthetic stimuli. The mechanistic analyses use the line format and the feedback condition. Models range up to 14B parameters, and the identified heads matter less in larger models, so the head-level account may not transfer to frontier models, although the suppression effect grows rather than shrinks with scale in our range. Distractor suppression requires knowing the target and is a diagnostic, not a method. The probes show that information is linearly present, not that the model could use it with its existing weights. Our theory is limited to the minimal model.
+\textbf{Limitations.} We study one task family (letter N-back) with synthetic stimuli. The mechanistic analyses use the line format and the feedback condition. Models range up to 14B parameters, and the identified heads matter less in larger models, so the head-level account may not transfer to frontier models, although the suppression effect grows rather than shrinks with scale in our range (Fig.~\ref{fig:causal}b). Distractor suppression requires knowing the target and is a diagnostic, not a method. The probes show that information is linearly present, not that the model could use it with its existing weights. Our theory is limited to the minimal model.
 
 \textbf{Broader impact.} This is basic research on model mechanisms with public models and synthetic data. Better diagnosis of working-memory failures may help evaluation; the interventions are analysis tools with no deployment use.
 
@@ -200,7 +205,7 @@ Pretrained transformers locate the item N back: content-addressed heads land on 
 
 \textbf{Interventions (L5, B1).} Sharpening multiplies a head's attention logits by $1/\tau$; ablation replaces a head's output by its mean over calibration items; random heads are drawn from the same layers. Suppression replaces $h$ by $h-\alpha\,((h-\mu)U)U^\top$ at every residual site (input to the first layer and every layer's output) over the tokens of each non-target line, where $U$ spans the 19 centred class means of the 20 letters at test-item letter tokens. The random control uses a random orthonormal $U$ of the same rank.
 
-\textbf{Compute.} Minimal models on a CPU cluster; LLM studies on single H100 or B200 GPUs per model and N. [Total GPU-hours to be filled in from cluster and cloud accounting.]
+\textbf{Compute.} Minimal models mostly on a CPU cluster (about 1,060 core-hours), with some sweeps on single H100 GPUs; LLM studies on single L40S, H100 or B200 GPUs per model and N. The whole project, including preliminary and failed runs, used about \gpuhours{} GPU-hours.
 
 \textbf{Licenses.} Pythia (Apache-2.0), GPT-2 (MIT), Qwen2.5 (Apache-2.0; Qwen license for some sizes).
 
@@ -230,6 +235,7 @@ Pretrained transformers locate the item N back: content-addressed heads land on 
 
 \textbf{Post-hoc attention edits in the minimal model (E7).} On 720 one-layer checkpoints, a fixed split of attention between $i$ and $i-N$ gives \dprime{}~$\approx0$ at every N; keeping only the model's own mass on $i$ and $i-N$ lowers \dprime{} from 2.70 to 0.63 at N = 1 and from 2.18 to 1.32 at N = 6, with false alarms rising from 0.03 to 0.67 at N = 1. Removing either the content or the position term of the logits gives \dprime{}~$\approx0$.
 
+\clearpage
 \input{checklist.tex}
 
 \end{document}
