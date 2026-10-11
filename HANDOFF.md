@@ -7,6 +7,7 @@ Read this first when picking the project up in a new (local) Claude Code session
 - Plan doc (Claude Doc): "Attention Precision Research Plan" — https://claude.ai/code/artifact/37ddb091-8084-41c2-bbf5-b5c8868bb9ad
   - "Revised framing" section at the top = current claims C1–C4, scorecard, outline.
   - Execution log is up to date (all phases Done except the open paper items below).
+- Previous chat (for reference): ~/attention-precision-chat.jsonl
 - Paper draft: `paper/main.tex` (NeurIPS 2026 style, anonymous), `paper/main.pdf`. Build: `cd paper && latexmk -pdf main.tex` (runs bibtex).
 - Target venue: NeurIPS 2027.
 
@@ -56,9 +57,15 @@ Done 2026-10-10 (second session):
   Section 7 numbers recomputed (also fixed: sharpening p was misquoted as 0.23; flattening cost 0.32;
   whole-model temperature 19 of 30). `summarize_all.py` now dedups L5 rows (H100/Q0.5B reruns won).
 
+- Theory expanded (§5): Corollary 1 (content-independent attention gives no mean signal, however precise;
+  confirmed by E7 |d′| ≤ 0.07), Corollary 2 (the precision account's lure prediction; rejected by the data),
+  Proposition 4 (linear readout under interference: suppression vs sharpening vs random subspace), Table 1
+  mapping each prediction to its test; proofs in App. A. Reviewed by a fresh-eyes agent; its 12 points fixed
+  (notably: Cor. 1 gives equal means, not equal distributions; Prop. 4 allows lure-dependent distractor bias).
+  Main text now ends on page 9 (limit reached).
+
 Still open:
-1. ~1.5 pages of spare main-text room remain (theory P1–P3 expansion is the main candidate).
-2. Misha checkout is behind origin and has an untracked results/summary.json that blocks `git pull`
+1. Misha checkout is behind origin and has an untracked results/summary.json that blocks `git pull`
    (move it aside first).
 
 ## Gotchas learned

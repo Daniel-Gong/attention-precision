@@ -7,6 +7,7 @@
 \usepackage{hyperref}
 \usepackage{url}
 \usepackage{booktabs}
+\usepackage{array}
 \usepackage{amsfonts,amsmath,amssymb,amsthm}
 \usepackage{nicefrac}
 \usepackage{microtype}
@@ -16,6 +17,7 @@
 \graphicspath{{../figures/}}
 
 \newtheorem{proposition}{Proposition}
+\newtheorem{corollary}{Corollary}
 \newcommand{\dprime}{$d'$}
 % Total GPU-hours: Misha H100 13.2 (scripts/compute_hours.sh) + Modal B200 13.0, H100 12.2, L40S 13.0 (usage dashboard,
 % Oct 2026, dollars / list rate). Used in Appendix B and the checklist.
@@ -49,7 +51,7 @@ We test both predictions with a common set of stimuli, thresholds and interventi
 \begin{itemize}
   \item \textbf{A locating-versus-readout decomposition} (Section~\ref{sec:locate}). Content-addressed heads place attention on the target line on about 90\% of misses; lure false alarms come from heads landing on the same-letter lure. Probes show that whether a match sits at $i-N$ or at a lure offset is linearly decodable in the residual stream, and remains so on the model's own false alarms.
   \item \textbf{A causal contrast on one axis} (Section~\ref{sec:causal}, Fig.~\ref{fig:causal}). Ablating the identified heads costs a median 0.93 \dprime{}; sharpening them gains a median 0.05; removing distractor content gains 0.60, with sequence-level bootstrap intervals for every cell.
-  \item \textbf{Where precision binds} (Section~\ref{sec:theory}). We show when the softmax precision bound constrains capacity (one layer, no residual stream) and why depth removes it, and find that even there accuracy tracks the use of content, not the sharpness of position.
+  \item \textbf{Where precision binds} (Section~\ref{sec:theory}). We show when the softmax precision bound constrains capacity (one layer, no residual stream) and why depth removes it. We prove that in this model content-independent attention carries no signal however precise it is, and give a readout model that separates sharpening from removing interference. Each prediction is tested (Table~\ref{tab:predictions}); accuracy tracks the use of content, not the sharpness of position.
   \item \textbf{Architecture and development} (Section~\ref{sec:arch}). Fixed-state recurrent models with enough state solve the task, while a selective state-space model declines with N like attention; N-back heads appear early in Pythia training.
 \end{itemize}
 
@@ -95,23 +97,68 @@ All 15 models decline steeply with N (Fig.~\ref{fig:behaviour}a--c; Table~\ref{t
 \section{When does attention precision bind?}
 \label{sec:theory}
 
-Consider the minimal model of \citet{gong2024selfattention}: one attention layer, no residual stream and no MLP, with output $o_i=\sum_j a_{ij}v_j$, a linear decision on $o_i$, and logits $s_{ij}=c(x_i,x_j)+p(i-j)$ (a content and a position term).
+Consider the minimal model of \citet{gong2024selfattention}: one attention layer, no residual stream and no MLP, with output $o_i=\sum_j a_{ij}v_j$, a linear decision on $o_i$, and logits $s_{ij}=c(x_i,x_j)+p(i-j)$ (a content and a position term). For a query at position $i$, let $t=i-N$ be the target, $u_j=w^\top v_j$ the scalar the readout assigns to key $j$, and $r_i=\sum_j a_{ij}u_j$ the decision variable. Without a residual stream, $u_j=u(x_j,j)$ depends only on the letter and position of key $j$. A trial is a match when $x_t=x_i$. The stimulus generator treats all letters alike (it is invariant under relabelling the alphabet), so each single position has the same, uniform letter distribution on match and non-match trials; only joint distributions differ.
 
 \begin{proposition}[the readout is a mass test]\label{prop:mass}
-In this model the decision is linear in $\sum_j a_{ij} v_j$, and no linear function of a convex combination of letter embeddings can test whether two letters are equal. The match signal must therefore be carried by how the attention distribution differs between match and non-match trials.
+In this model the decision is linear in $\sum_j a_{ij} v_j$, and for fixed weights $a_{ij}$ no linear function of a convex combination of letter embeddings can test whether two letters are equal. The difference in mean readout between match and non-match trials must therefore be carried by how the attention distribution differs between them.
 \end{proposition}
+
+\begin{corollary}[precision without content carries no signal]\label{cor:fixed}
+For any fixed weight vector $\bar a$ and $u_{\max}=\max_{x,j}|u(x,j)|$,
+\[
+\bigl|\mathbb{E}[r_i\mid\text{match}]-\mathbb{E}[r_i\mid\text{non-match}]\bigr|\;\le\;u_{\max}\bigl(\mathbb{E}_{\text{match}}\|a_i-\bar a\|_1+\mathbb{E}_{\text{non-match}}\|a_i-\bar a\|_1\bigr).
+\]
+In particular, any attention pattern that does not depend on content, including an oracle that splits all mass between $i$ and $i-N$, gives the same mean readout on match and non-match trials, however precisely it locates the target; only differences in the shape of the two distributions remain for a threshold to use.
+\end{corollary}
 
 \begin{proposition}[softmax dispersion]\label{prop:dispersion}
-If $K$ keys have logits at least $\Delta$ below the target's, the target receives mass at least $1/(1+Ke^{-\Delta})$; keeping it above $1-\epsilon$ requires $\Delta\ge\log(K/\epsilon)$. A lure shares the target's content, so only the position term separates them, and the lure-to-target mass ratio is $e^{-\delta_P}$ with $\delta_P=p(N)-p(N\pm1)$.
+If each of the $K$ other keys has a logit at least $\Delta$ below the target's, the target receives mass at least $1/(1+Ke^{-\Delta})$, and this guarantees mass $1-\epsilon$ for every such configuration if and only if $\Delta\ge\log(K(1-\epsilon)/\epsilon)$. Two keys with the same letter are separated only by the position term: a key at offset $N\pm1$ receives $e^{-\delta_P}$ times the mass of a key at offset $N$, with $\delta_P=p(N)-p(N\pm1)$.
 \end{proposition}
+
+\begin{corollary}[what the precision account predicts]\label{cor:lure}
+Suppose the decision is driven by the mass on a key that carries the query letter (the attend-on-match solution). Compare a match trial with a lure trial that is identical except that the query letter sits at offset $N\pm1$ instead of $N$. The lure key then receives $e^{-\delta_P}Z^{\text{m}}/Z^{\text{l}}$ times the mass the target receives on the match trial, where $Z^{\text{m}},Z^{\text{l}}$ are the two softmax normalizers. Unless the normalizer ratio compensates, lure false alarms should fall as $\delta_P$ grows, and if dispersion caused the decline with N, $\delta_P$ should shrink as N grows.
+\end{corollary}
 
 \begin{proposition}[depth removes the bound]\label{prop:depth}
-With two layers, a residual stream and an absolute or rotary position code, a first-layer head can copy $x_{i-N}$ into position $i$ with margin growing in the weight norm, and the equality test can then be computed in the residual stream, outside the softmax. A monotone recency bias (ALiBi, or no position code) cannot single out offset $N$ in one head.
+With two layers, a residual stream and an absolute or rotary position code, a first-layer head can copy $x_{i-N}$ into position $i$ with margin growing in the weight norm. Position $i$ then carries both letters, and a second layer (through a bilinear query--key term) or an MLP can test their equality without competing against the other, N-dependent keys. A monotone recency bias (ALiBi, or no position code) cannot single out offset $N>1$ in one head, so the copy step fails.
 \end{proposition}
 
-Proofs are in Appendix~\ref{app:theory}. Figure~\ref{fig:minimal} tests the propositions. The one-layer model declines with N (\dprime{} 2.67 to 2.15 over 50 seeds; panel a). Unnormalized sigmoid attention and top-$k$ attention raise and flatten the curve, while scalable softmax does not (panel b), as Proposition~\ref{prop:dispersion} predicts for a normalization-driven limit. With two layers and a residual stream the decline disappears: \dprime{} is 6.4--7.2 at every N with learned positions, 5.4--5.8 with sinusoidal and 4.5--5.9 with rotary codes, and 7.7--7.8 for a single model trained on all N with a cue (panel c); ALiBi and no-position models fail at every N (\dprime{} 1.3--1.8), as Proposition~\ref{prop:depth} predicts.
+Once depth removes the bound, what limits a deep model? Proposition~\ref{prop:interference} describes a general linear readout in which other items' content interferes with the decision. It does not assume one layer, and it separates the two interventions of Section~\ref{sec:causal}.
 
-Is dispersion the binding constraint even in the one-layer model? Decomposing the logits of 720 trained checkpoints, the position margin $\delta_P$ does not shrink as N grows (4.5 at N = 1, 6.7 at N = 5). Across the 300 checkpoints of the main configuration, $\delta_P$ predicts neither lure false alarms (Spearman $\rho=-0.03$) nor \dprime{} ($\rho=-0.05$; Fig.~\ref{fig:minimal}d). What does predict \dprime{} is the size of the difference in target attention between match and non-match trials ($\rho=0.62$; leave-one-N-out $R^2=0.37$; panel e), as Proposition~\ref{prop:mass} implies. The sign of that difference changes with N: every seed attends more to the target on match trials at N = 1, but only 48\% do at N = 4 and 18\% at N = 6 (panel f); the rest attend away from a matching letter. Consistent with Proposition~\ref{prop:mass}, every post-hoc edit of the attention pattern (an oracle on $i-N$, or removing off-target mass) lowers \dprime{}, because off-target mass is part of the code (Appendix~\ref{app:results}). Precision bounds the minimal model, but the decline is shaped by how content is read out.
+\begin{proposition}[sharpening versus removing interference]\label{prop:interference}
+Let the decision variable be $r=w^\top h$ with $h=\gamma\,y\,e+\sum_{j\in D}B_j g_j+z$, where $y=\pm1$ marks match and non-match, $\gamma e$ is the signal, $g_j\in\mathbb{R}^d$ is the letter content of distractor item $j\in D$, which lies in a $q$-dimensional subspace, $B_j$ are fixed linear maps that write it into $h$, and $z$ is noise independent of the letters. Distractor content may depend on $y$ (lures are planted on non-match trials): let $b_y=\mathbb{E}[w^\top\sum_jB_jg_j\mid y]$, $\beta=b_{+}-b_{-}$, and let $\sigma_D^2$ and $\sigma_z^2$ be the within-class variances of the distractor and noise terms of $r$. Then $d'=(2\gamma\,w^\top e+\beta)/\sqrt{\sigma_D^2+\sigma_z^2}$.
+\begin{enumerate}
+  \item[(a)] Removing a fraction $\alpha$ of every distractor's letter content ($g_j\to(1-\alpha)g_j$) gives $d'(\alpha)=(2\gamma\,w^\top e+(1-\alpha)\beta)/\sqrt{(1-\alpha)^2\sigma_D^2+\sigma_z^2}$, which increases with $\alpha$ when $\beta\le0$, that is, when distractors push non-match trials towards ``match'', as lures do.
+  \item[(b)] Removing a uniformly random $q$-dimensional subspace instead removes, in expectation, a fraction $q/d$ of each distractor's content (in squared norm).
+  \item[(c)] If a head with value vectors $v_j$ and output $W_O\sum_j a_j v_j$ reaches $h$ directly and puts mass at least $1-\epsilon$ on the target line, it contributes at most $\epsilon\max_j|w^\top W_O v_j|$ of distractor content to $r$; this bounds what re-weighting its attention can remove.
+\end{enumerate}
+\end{proposition}
+
+Sharpening thus acts on one head and can remove at most that head's off-target share of interference; when off-target mass carries signal, as in the minimal model (Corollary~\ref{cor:fixed}), it removes signal as well. Removing distractor content acts on interference wherever it is written, by any head or layer, and removes both the lure bias $\beta$ and the variance $\sigma_D^2$: false alarms should fall while hits hold. When the top heads carry a small share of the interference, suppression should therefore beat sharpening. The linear model predicts gains that grow with $\alpha$. In LLMs the gain peaks at $\alpha=0.5$ (Section~\ref{sec:causal}), so full removal also costs something, for instance by moving activations off their usual range. Proofs of all statements are in Appendix~\ref{app:theory}; Table~\ref{tab:predictions} lists each prediction and its test.
+
+\begin{table}[t]
+  \centering\small
+  \caption{Predictions of the propositions and their tests. \checkmark: confirmed; $\times$: not supported.}
+  \label{tab:predictions}
+  \begin{tabular}{@{}>{\raggedright\arraybackslash}p{0.095\textwidth}>{\raggedright\arraybackslash}p{0.34\textwidth}>{\raggedright\arraybackslash}p{0.205\textwidth}>{\raggedright\arraybackslash}p{0.26\textwidth}@{}}
+    \toprule
+    Statement & Prediction & Test & Result \\
+    \midrule
+    Cor.~\ref{cor:fixed} & Content-independent attention gives no mean signal, however precise & E7: fixed mix of $i$, $i-N$; content term removed & $|d'|\le0.07$ at every N \checkmark \\
+    Prop.~\ref{prop:mass} & $d'$ tracks the match/non-match attention-mass gap & 300 one-layer checkpoints & $\rho=0.62$ (Fig.~\ref{fig:minimal}e) \checkmark \\
+    Prop.~\ref{prop:dispersion} & Changing the normalization changes the decline & E5: sigmoid, top-$k$, scalable softmax & sigmoid and top-$k$ flatten it \checkmark \\
+    Cor.~\ref{cor:lure} & Lure FAs fall with $\delta_P$; $\delta_P$ shrinks with N & E1 $\times$ E6 logit decomposition & $\rho=-0.03$; $\delta_P$ 4.5 $\to$ 6.7 $\times$ \\
+    Prop.~\ref{prop:depth} & Depth and residual remove the decline with absolute or rotary codes & E3b, E10 & $d'$ 4.5--7.8, flat \checkmark; ALiBi, none fail (1.3--1.8) \\
+    Prop.~\ref{prop:interference} & Removing distractor content beats sharpening, cuts FAs, keeps hits; random subspace $\approx0$ & B1 in 15 LLMs (Sec.~\ref{sec:causal}) & $+0.60$ vs.\ $+0.05$; random $-0.03$ \checkmark \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\textbf{Tests in the minimal model.} Figure~\ref{fig:minimal} tests Propositions~\ref{prop:mass}--\ref{prop:depth}. The one-layer model declines with N (\dprime{} 2.67 to 2.15 over 50 seeds; panel a). Unnormalized sigmoid attention and top-$k$ attention raise and flatten the curve, while scalable softmax does not (panel b), as Proposition~\ref{prop:dispersion} predicts for a normalization-driven limit. With two layers and a residual stream the decline disappears: \dprime{} is 6.4--7.2 at every N with learned positions, 5.4--5.8 with sinusoidal and 4.5--5.9 with rotary codes, and 7.7--7.8 for a single model trained on all N with a cue (panel c); ALiBi and no-position models fail at every N (\dprime{} 1.3--1.8). Proposition~\ref{prop:depth} rules out their copy step for $N>1$; their failure at N = 1, where the most recent item is the target, is stronger than it predicts.
+
+Corollary~\ref{cor:fixed} is confirmed. On 720 trained one-layer checkpoints, fixing attention to any mix of $i$ and $i-N$, which keeps both letters in the output, gives $|d'|\le0.07$ at every N, and removing the content term of the logits gives $|d'|\le0.04$. Removing the position term also fails ($d'$ between $-0.28$ and $-0.03$), because content alone cannot tell offset N from any other repeat. Precise location is useless without content-dependent attention.
+
+Is dispersion the binding constraint even in the one-layer model? The data reject both predictions of Corollary~\ref{cor:lure}. Decomposing the logits of the 720 checkpoints, the position margin $\delta_P$ does not shrink as N grows (4.5 at N = 1, 6.7 at N = 5). Across the 300 checkpoints of the main configuration, $\delta_P$ predicts neither lure false alarms (Spearman $\rho=-0.03$) nor \dprime{} ($\rho=-0.05$; Fig.~\ref{fig:minimal}d). What does predict \dprime{} is the size of the difference in target attention between match and non-match trials ($\rho=0.62$; leave-one-N-out $R^2=0.37$; panel e), as Proposition~\ref{prop:mass} implies. The sign of that difference changes with N: every seed attends more to the target on match trials at N = 1, but only 48\% do at N = 4 and 18\% at N = 6 (panel f); the rest attend away from a matching letter. Both solutions are mass tests, and Corollary~\ref{cor:fixed} bounds them alike. Sharpening the trained attention also lowers \dprime{} at N = 1--5 (2.70 to 2.20 at N = 1 with $\tau=0.67$; at most $+0.06$ at N = 6), and removing off-target mass costs more (Appendix~\ref{app:results}): off-target mass is part of the code. Precision bounds the minimal model, but the decline is shaped by how content is read out.
 
 \begin{figure}[t]
   \centering
@@ -141,10 +188,10 @@ We apply five interventions to all 15 models at N = 2--4, on the same sequences,
 \begin{itemize}
   \item \textbf{Ablation.} Mean-ablating the top-10 patching heads lowers \dprime{} in 42 of 43 cells (median $-0.93$); ten random heads from the same layers do not (median $+0.00$). The effect shrinks with scale (Qwen2.5-7B: $-0.27$ to $+0.03$; Qwen2.5-14B: $-0.48$ to $-0.17$), indicating more distributed solutions.
   \item \textbf{Sharpening.} Scaling the top-3 heads' logits by $1/\tau$ changes \dprime{} by a median $+0.05$ at $\tau=0.67$ and $+0.03$ at $\tau=0.8$ (range $-0.30$ to $+0.30$); flattening them ($\tau=2$) costs a median 0.32 in the full sweep. Changing the temperature of every head helps most at mild \emph{flattening} ($\tau=1.25$) in 19 of 30 cells. The heads sit near their optimal sharpness.
-  \item \textbf{Distractor suppression.} For each query $i$, we remove the 19-dimensional letter-identity subspace (fit on calibration sequences at every residual site) from the whole line of every earlier item except $i-N$, scoring each query on its own prefix. At half strength this raises \dprime{} in 42 of 43 cells (median $+0.60$, up to $+1.78$), including at N = 4 (median $+0.44$) and in Qwen2.5-14B ($1.60\to3.38$ at N = 3). False alarms fall from about 0.2--0.3 to about 0.1 while hits hold. Removing a random subspace of the same rank does nothing (median $-0.03$); removing the target's letter destroys performance (median $-1.54$). Full strength also helps (median $+0.46$) but over-suppresses in Qwen2.5-7B.
+  \item \textbf{Distractor suppression.} For each query $i$, we remove the 19-dimensional letter-identity subspace (fit on calibration sequences at every residual site) from the whole line of every earlier item except $i-N$, scoring each query on its own prefix. At half strength this raises \dprime{} in 42 of 43 cells (median $+0.60$, up to $+1.78$), including at N = 4 (median $+0.44$) and in Qwen2.5-14B ($1.60\to3.38$ at N = 3). False alarms fall from about 0.2--0.3 to about 0.1 while hits hold. Removing a random subspace of the same rank does nothing (median $-0.03$), as Proposition~\ref{prop:interference}b predicts ($q/d\le19/512$); removing the target's letter destroys performance (median $-1.54$). Full strength also helps (median $+0.46$) but over-suppresses in Qwen2.5-7B.
   \item \textbf{Replication of \citet{xiong2026superposition}.} One letter-identity direction at one of the two earliest depths, applied at answer positions only, with the configuration chosen on calibration sequences: median $+0.11$ (range $+0.01$ to $+0.30$, 28 cells). The best-of-sweep statistic selected on test data gives $+0.12$, so their effect replicates; it is about a fifth of the effect of targeting the distractor items.
 \end{itemize}
-Across cells, distractor suppression and head ablation differ from zero with Wilcoxon $p<10^{-8}$; sharpening gives a small but consistent gain ($p=0.04$ at $\tau=0.67$, $p=0.001$ at $\tau=0.8$), an order of magnitude below distractor suppression. Distractor suppression is oracle-targeted, since it knows which item is the target, so it is a causal test of interference rather than a usable method.
+Across cells, distractor suppression and head ablation differ from zero with Wilcoxon $p<10^{-8}$; sharpening gives a small but consistent gain ($p=0.04$ at $\tau=0.67$, $p=0.001$ at $\tau=0.8$), an order of magnitude below distractor suppression. Proposition~\ref{prop:interference} explains this ordering: sharpening can remove only the top heads' off-target share of interference, while suppression removes it, and the lure bias with it, wherever it is written. Distractor suppression is oracle-targeted, since it knows which item is the target, so it is a causal test of interference rather than a usable method.
 
 \textbf{Scale.} The two accounts part ways as models grow (Fig.~\ref{fig:causal}b). Ablating the identified heads costs less in larger models (Spearman $\rho=0.74$ between size and each model's median change, $p=0.002$, 15 models), from about $-1.6$ in the smallest Pythia models to $-0.21$ in Qwen2.5-14B: the solution becomes more distributed. Removing distractor content helps more ($\rho=0.57$, $p=0.03$, 15 models). Qwen2.5-14B, the largest model, shows the pattern most clearly. Half-strength suppression raises its \dprime{} from 2.42 to 2.88, 1.60 to 3.38 and 1.29 to 2.05 at N = 2, 3 and 4, with every bootstrap interval at least 0.40 above zero; a random subspace of the same rank changes it by $-0.10$, $-0.05$ and $+0.18$. With distractor content removed, the model at N = 3 outperforms its own unmodified N = 2 baseline. Scale makes the task less dependent on a few heads, but not less limited by interference.
 
@@ -172,7 +219,7 @@ Recurrent baselines trained on the same stimuli separate two kinds of memory (Fi
 
 Pretrained transformers locate the item N back: content-addressed heads land on the target line, and the residual stream encodes whether the matching letter sat at $i-N$ or at a lure position. They fail in readout, where the content of other items interferes with the decision. Sharpening attention cannot fix this; removing the interfering content largely does. The precision account is not wrong so much as narrow: it describes a one-layer, residual-free model, and depth removes it. This places transformer working memory closer to interference accounts of human working memory than to fixed-slot or attention-bottleneck accounts \citep{ma2014changing,engle2002executive}, and suggests that training or architectural changes that separate item content from the decision variable, rather than sharper attention, are the lever for improving it.
 
-\textbf{Limitations.} We study one task family (letter N-back) with synthetic stimuli. The mechanistic analyses use the line format and the feedback condition. Models range up to 14B parameters, and the identified heads matter less in larger models, so the head-level account may not transfer to frontier models, although the suppression effect grows rather than shrinks with scale in our range (Fig.~\ref{fig:causal}b). Distractor suppression requires knowing the target and is a diagnostic, not a method. The probes show that information is linearly present, not that the model could use it with its existing weights. Our theory is limited to the minimal model.
+\textbf{Limitations.} We study one task family (letter N-back) with synthetic stimuli. The mechanistic analyses use the line format and the feedback condition. Models range up to 14B parameters, and the identified heads matter less in larger models, so the head-level account may not transfer to frontier models, although the suppression effect grows rather than shrinks with scale in our range (Fig.~\ref{fig:causal}b). Distractor suppression requires knowing the target and is a diagnostic, not a method. The probes show that information is linearly present, not that the model could use it with its existing weights. Propositions 1--3 concern the minimal model; Proposition~\ref{prop:interference} is a linear model of the readout, not derived from trained weights, and does not explain why suppression helps most at half strength.
 
 \textbf{Broader impact.} This is basic research on model mechanisms with public models and synthetic data. Better diagnosis of working-memory failures may help evaluation; the interventions are analysis tools with no deployment use.
 
@@ -186,9 +233,15 @@ Pretrained transformers locate the item N back: content-addressed heads land on 
 
 \textbf{Proposition~\ref{prop:mass}.} Let $e_x$ be the value vector of letter $x$ (no residual stream, no MLP, so the output is $o_i=\sum_j a_{ij}e_{x_j}$ up to a fixed linear map, plus positional components that do not depend on the letters). A linear readout computes $w^\top o_i=\sum_j a_{ij}w^\top e_{x_j}$. For fixed attention weights this is additive in the letters, so it cannot represent the indicator $[x_i=x_{i-N}]$, which is not additive (it is an XOR-like function of the two letters). Any dependence of the decision on equality must enter through $a_{ij}$, which depends on $x_i$ and $x_j$ jointly through the content term $c(x_i,x_j)$. \qed
 
-\textbf{Proposition~\ref{prop:dispersion}.} With target logit $s_t$ and $K$ competitors $s_k\le s_t-\Delta$, $a_t=e^{s_t}/(e^{s_t}+\sum_k e^{s_k})\ge 1/(1+Ke^{-\Delta})$. Requiring $a_t\ge1-\epsilon$ gives $Ke^{-\Delta}\le\epsilon/(1-\epsilon)$, so $\Delta\ge\log(K/\epsilon)+\log(1-\epsilon)$. For a lure $\ell$ with $x_\ell=x_t$, $c(x_i,x_\ell)=c(x_i,x_t)$ and $a_\ell/a_t=\exp(p(i-\ell)-p(i-t))=e^{-\delta_P}$. \qed
+\textbf{Corollary~\ref{cor:fixed}.} Write $r_i=\sum_j\bar a_ju_j+\sum_j(a_{ij}-\bar a_j)u_j$. The first term is a sum of functions of single letters, $\bar a_j u(x_j,j)$. Because the generator is invariant under relabelling the alphabet, each $x_j$ is uniform on both match and non-match trials, so the first term has the same expectation on both. The second term is at most $u_{\max}\|a_i-\bar a\|_1$ in absolute value. Taking expectations on both trial types gives the bound. If attention does not depend on content, $a_i$ is fixed for each $i$; with $\bar a=a_i$ the bound is zero, so the means are equal. The distributions need not be equal (joint letter statistics differ between trial types), so a threshold can retain a small sensitivity. \qed
 
-\textbf{Proposition~\ref{prop:depth}} (sketch). With absolute positions $P_j$ and a first-layer head whose query--key product is $\beta\,P_i^\top R P_j$ with $R$ chosen so that $P_i^\top RP_j$ is maximized uniquely at $j=i-N$ with gap $g>0$, the head places mass at least $1/(1+Le^{-\beta g})$ on $i-N$; its output, added to the residual stream, makes $e_{x_{i-N}}$ available at position $i$ alongside $e_{x_i}$, and an MLP or a second attention layer can compute equality of the two letters. Rotary codes provide the same relative-offset selectivity. Under ALiBi, the bias $-m(i-j)$ is monotone in distance, so one head's maximum over positions with equal content is always the most recent, and offset $N>1$ cannot be singled out. \qed
+\textbf{Corollary~\ref{cor:lure}.} On the match trial the target key carries the query letter and receives $a_t=e^{c^+ +p(N)}/Z^{\text{m}}$, where $c^+=c(x,x)$. On the paired lure trial the lure key carries it and receives $a_\ell=e^{c^+ +p(N\pm1)}/Z^{\text{l}}$. Hence $a_\ell/a_t=e^{-\delta_P}\,Z^{\text{m}}/Z^{\text{l}}$. The two normalizers differ only in the terms of these two keys, so the ratio is near 1 when those terms are a small share of either; when the matching key dominates $Z^{\text{m}}$ the ratio exceeds 1 and weakens the prediction. \qed
+
+\textbf{Proposition~\ref{prop:interference}.} The class means of $r$ are $\pm\gamma\,w^\top e+b_{\pm}$ (plus a common constant), so their difference is $2\gamma\,w^\top e+\beta$, and the within-class variance is $\sigma_D^2+\sigma_z^2$. (a) The content enters $h$ linearly, so scaling every $g_j$ by $1-\alpha$ scales $\beta$ by $1-\alpha$ and $\sigma_D^2$ by $(1-\alpha)^2$; $\gamma$, $e$ and $z$ do not involve distractor letters. With $\beta\le0$ and a positive numerator, the numerator rises and the denominator falls as $\alpha$ grows. (b) For a uniformly random $q$-dimensional subspace with projector $P_R$, $\mathbb{E}[P_R]=(q/d)I$ by rotational symmetry, so $\mathbb{E}\|P_Rg\|^2=g^\top\mathbb{E}[P_R]g=(q/d)\|g\|^2$. (c) The head's distractor contribution is $\sum_{j\in D}a_jw^\top W_Ov_j$, and $\sum_{j\in D}a_j\le\epsilon$ because the distractors lie off the target line. \qed
+
+\textbf{Proposition~\ref{prop:dispersion}.} With target logit $s_t$ and $K$ competitors $s_k\le s_t-\Delta$, $a_t=e^{s_t}/(e^{s_t}+\sum_k e^{s_k})\ge 1/(1+Ke^{-\Delta})$. Requiring $a_t\ge1-\epsilon$ gives $Ke^{-\Delta}\le\epsilon/(1-\epsilon)$, so $\Delta\ge\log(K(1-\epsilon)/\epsilon)$. For a lure $\ell$ with $x_\ell=x_t$, $c(x_i,x_\ell)=c(x_i,x_t)$ and $a_\ell/a_t=\exp(p(i-\ell)-p(i-t))=e^{-\delta_P}$. \qed
+
+\textbf{Proposition~\ref{prop:depth}} (sketch). With absolute positions $P_j$ and a first-layer head whose query--key product is $\beta\,P_i^\top R P_j$ with $R$ chosen so that $P_i^\top RP_j$ is maximized uniquely at $j=i-N$ with gap $g>0$, the head places mass at least $1/(1+Le^{-\beta g})$ on $i-N$, where $L\le i$ is the number of keys; its output, added to the residual stream, makes $e_{x_{i-N}}$ available at position $i$ alongside $e_{x_i}$, and an MLP or a second attention layer can compute equality of the two letters. Rotary codes provide the same relative-offset selectivity. Under ALiBi, the bias $-\lambda(i-j)$ is monotone in distance, so one head's maximum over positions with equal content is always the most recent, and offset $N>1$ cannot be singled out. \qed
 
 \section{Methods}
 \label{app:methods}
@@ -230,6 +283,7 @@ Pretrained transformers locate the item N back: content-addressed heads land on 
   \centering\small
   \caption{Locate (L7) and probe (L8) results per model.}
   \label{tab:l7l8}
+  \setlength{\tabcolsep}{4.5pt}
   \input{tables/l7_l8.tex}
 \end{table}
 
