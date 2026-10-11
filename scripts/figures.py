@@ -252,9 +252,15 @@ def fig4(S, out):
         ax.set_title(f"{letter}  Residual-stream probe, N = {n} (L8)", loc="left")
         if n == 2:
             ax.set_ylabel("AUC / share of items")
-    h, l = axs[1].get_legend_handles_labels()
-    fig.legend(h, [x.replace("\n", " ") for x in l], loc="lower center", bbox_to_anchor=(0.66, 0.0), ncol=2, fontsize=6.5)
     fig.tight_layout(w_pad=1.0)
+    # b/c legend sits just under their x labels, level with panel a's legend
+    fig.canvas.draw()
+    inv = fig.transFigure.inverted()
+    lab = inv.transform(axs[1].xaxis.label.get_window_extent())
+    x0, x1 = axs[1].get_position().x0, axs[2].get_position().x1
+    h, l = axs[1].get_legend_handles_labels()
+    fig.legend(h, [x.replace("\n", " ") for x in l], loc="upper center", bbox_to_anchor=((x0 + x1) / 2, lab[0, 1] - 0.01),
+               ncol=2, fontsize=6.5)
     save(fig, out, "fig4_locate_vs_readout")
 
 
@@ -352,48 +358,145 @@ def fig6(S, out):
     save(fig, out, "fig6_architectures_development")
 
 
+def tint(hexc, a):
+    """Mix a colour with white: a = 0 is white, a = 1 the full hue."""
+    return tuple(1 - a + a * np.array(to_rgb(hexc)))
+
+
 def fig1(S, out):
-    """Schematic: the task, the two accounts, and the answer (numbers from B1 and L8)."""
-    from matplotlib.patches import FancyArrowPatch, FancyBboxPatch
-    fig = plt.figure(figsize=(7.2, 2.5))
-    # a: task
-    ax = fig.add_axes([0.0, 0.08, 0.33, 0.84]); ax.axis("off"); ax.set_xlim(0, 7); ax.set_ylim(0, 4)
-    ax.set_title("a  2-back with a lure", loc="left")
+    """Schematic: the task, the two accounts drawn as mechanisms, and the causal answer (B1 cells)."""
+    from matplotlib.patches import Circle, FancyArrowPatch, FancyBboxPatch
+    TGT, TGT_D, LURE = C[3], "#9a6800", C[7]                   # target amber (dark variant for text), lure red
+    PREC, PREC_D, INTF, INTF_D = C[0], "#1d5aa3", C[2], "#0d7a52"  # precision / interference accounts (as in Fig 5)
+    PAPER = "#f1f0ec"
+    W, H = 7.2, 2.62
+    fig = plt.figure(figsize=(W, H))
+    cv = fig.add_axes([0, 0, 1, 1]); cv.axis("off")
+    cv.set_xlim(0, 72); cv.set_ylim(0, H * 10); cv.set_aspect("equal")   # 1 unit = 0.1 inch
+
+    def box(x, y, w, h, fc, ec="none", lw=0.0, r=0.35, ls="-", z=1):
+        cv.add_patch(FancyBboxPatch((x, y), w, h, boxstyle=f"round,pad=0,rounding_size={r}", fc=fc, ec=ec, lw=lw,
+                                    ls=ls, zorder=z))
+
+    def arrow(p, q, col, rad=0.0, ls="-", lw=1.0, ms=7, z=3):
+        cv.add_patch(FancyArrowPatch(p, q, connectionstyle=f"arc3,rad={rad}", arrowstyle="-|>", color=col, lw=lw,
+                                     ls=ls, mutation_scale=ms, shrinkA=0, shrinkB=0, zorder=z))
+
+    def title(x, s):
+        cv.text(x, H * 10 - 1.0, s, fontsize=8.5, color=INK, va="center", weight="bold")
+
     letters = ["k", "t", "k", "r", "t", "q", "r"]
+    LI, TI, QI = 3, 4, 6                                       # lure, target, query indices
+
+    def tile_style(j):
+        if j == TI:
+            return tint(TGT, 0.30), TGT, 0.9
+        if j == LI:
+            return tint(LURE, 0.22), LURE, 0.9
+        if j == QI:
+            return "white", INK, 1.2
+        return PAPER, "none", 0.0
+
+    # ---- a: the task -------------------------------------------------------------------------------------------
+    title(0.2, "a  Task: 2-back with a lure")
+    w, step, x0, y0, h = 2.25, 2.62, 0.5, 12.6, 3.0
+    cx = [x0 + j * step + w / 2 for j in range(7)]
     for j, c in enumerate(letters):
-        col = {4: C[2], 3: C[7]}.get(j, "#f1f0ec")
-        ax.add_patch(FancyBboxPatch((j + 0.12, 2.0), 0.76, 0.9, boxstyle="round,pad=0.02,rounding_size=0.12",
-                                    fc=col if j in (3, 4) else "#f1f0ec", ec="none", alpha=0.25 if j in (3, 4) else 1))
-        ax.text(j + 0.5, 2.45, c, ha="center", va="center", fontsize=11, family="monospace", color=INK)
-        ax.text(j + 0.5, 1.6, str(j + 1), ha="center", fontsize=6.5, color=INK2)
-    ax.add_patch(FancyBboxPatch((6.12, 2.0), 0.76, 0.9, boxstyle="round,pad=0.02,rounding_size=0.12", fc="none", ec=INK, lw=1.2))
-    ax.add_patch(FancyArrowPatch((6.5, 3.0), (4.5, 3.0), connectionstyle="arc3,rad=0.5", arrowstyle="-|>", color=C[2], lw=1.3, mutation_scale=8))
-    ax.add_patch(FancyArrowPatch((6.5, 3.0), (3.5, 3.0), connectionstyle="arc3,rad=0.55", arrowstyle="-|>", color=C[7], lw=1.0, ls="--", mutation_scale=8))
-    ax.text(5.55, 3.62, "target, 2 back", ha="center", fontsize=6.5, color=C[2], weight="bold")
-    ax.text(2.6, 3.25, "lure, 3 back", ha="center", fontsize=6.5, color=C[7], weight="bold")
-    ax.text(3.5, 0.9, "query: \"r\"  answer: no match (\"t\" is 2 back)\nlure: an \"r\" sits 3 back", ha="center", fontsize=6.5, color=INK2)
-    # b: two accounts
-    ax = fig.add_axes([0.34, 0.08, 0.31, 0.84]); ax.axis("off"); ax.set_xlim(0, 10); ax.set_ylim(0, 10)
-    ax.set_title("b  Two accounts of an error", loc="left")
-    for y, title, desc, col in ((6.6, "Locating failure (precision)", "softmax attention spreads over\nnear positions; the lure is read", C[0]),
-                                (1.6, "Readout failure (interference)", "attention lands on the target; other\nitems' content corrupts the readout", C[1])):
-        ax.add_patch(FancyBboxPatch((0.2, y - 0.6), 9.6, 3.3, boxstyle="round,pad=0.02,rounding_size=0.3", fc=shade(col, 0.0), ec="none"))
-        ax.text(0.6, y + 2.0, title, fontsize=7.5, weight="bold", color=INK)
-        ax.text(0.6, y + 0.9, desc, fontsize=6.6, color=INK, va="center")
-        ax.text(0.6, y - 0.2, "fix: sharpen attention" if y > 5 else "fix: remove distractor content", fontsize=6.6, color=INK2, style="italic")
-    # c: the answer
-    ax = fig.add_axes([0.79, 0.2, 0.2, 0.62])
-    b = S["b1"]; base = {(r["model"], r["n"]): r["dprime"] for r in b if r["cond"] == "baseline"}
-    ok = {k for k, v in base.items() if v > 0.3}
-    vals = [np.median([r["delta"] for r in b if r["cond"] == c and (r["model"], r["n"]) in ok])
-            for c in ("sharpen-top3@0.67", "suppress@0.5")]
-    ax.barh([1, 0], vals, color=[C[0], C[1]], height=0.55)
-    ax.set_yticks([1, 0], ["sharpen\nattention", "remove distractor\ncontent"]); ax.grid(axis="y", visible=False)
-    for y, v in zip([1, 0], vals):
-        ax.text(v + 0.02, y, f"{v:+.2f}", va="center", fontsize=7, color=INK)
-    ax.axvline(0, color=INK2, lw=1); ax.set_xlim(-0.1, 0.85)
-    ax.set_xlabel("median change in d′\n(15 LLMs × N = 2–4)")
-    ax.set_title("c  The answer: readout", loc="left")
+        fc, ec, lw = tile_style(j)
+        box(x0 + j * step, y0, w, h, fc, ec, lw, r=0.45)
+        cv.text(cx[j], y0 + h / 2, c, ha="center", va="center", fontsize=12, family="DejaVu Sans Mono",
+                color=INK, zorder=4)
+    top, bot = y0 + h + 0.3, y0 - 0.3                         # lure arc above the tiles, target arc below
+    arrow((cx[QI] - 0.2, top), (cx[LI], top), LURE, rad=0.42, lw=1.1, ls=(0, (3, 2)))
+    arrow((cx[QI] - 0.2, bot), (cx[TI], bot), TGT_D, rad=-0.55, lw=1.3)
+    cv.text((cx[QI] + cx[LI]) / 2 - 0.1, top + 2.65, "lure: same letter, 3 back", ha="center", va="center",
+            fontsize=6.5, color=LURE, weight="bold")
+    cv.text((cx[QI] + cx[TI]) / 2 - 0.1, bot - 2.35, "target: 2 back", ha="center", va="center", fontsize=6.5,
+            color=TGT_D, weight="bold")
+    cv.text(cx[QI] + 0.15, top + 0.75, "query", ha="left", va="center", fontsize=6, color=INK2)
+    cv.text(9.9, 6.3, "Does the query match the item 2 back?", ha="center", va="center", fontsize=6.5, color=INK)
+    cv.text(9.9, 4.6, "No: “r” ≠ “t”. Answering “match” because", ha="center", va="center", fontsize=6.5, color=INK2)
+    cv.text(9.9, 3.3, "of the 3-back “r” is a lure false alarm.", ha="center", va="center", fontsize=6.5, color=INK2)
+
+    # ---- b: two accounts, drawn as mechanisms ----------------------------------------------------------------
+    bx0, bx1 = 21.6, 53.2
+    title(bx0, "b  Two accounts of the same false alarm")
+    rows = [  # (card top, header, account, fix, colour, dark, attention over positions 1-6, read-out, ghosts, note)
+        (24.4, "Locating failure", "precision", "sharpen attention", PREC, PREC_D,
+         [0.03, 0.05, 0.07, 0.42, 0.30, 0.13], ("r", LURE), [("t", TGT, 0.8)], "attention spreads;\nmostly the lure is read"),
+        (12.4, "Readout failure", "interference", "remove distractors", INTF, INTF_D,
+         [0.01, 0.02, 0.02, 0.04, 0.88, 0.03], ("t", TGT_D), [("r", LURE, 0.9), ("k", INK2, 0.75), ("q", INK2, 0.75)],
+         "target is read, but other\nitems' content interferes"),
+    ]
+    for ytop, head, acct, fix, col, dark, att, main_l, ghosts, note in rows:
+        ch = 11.2
+        box(bx0, ytop - ch, bx1 - bx0, ch, tint(col, 0.07), tint(col, 0.45), 0.6, r=0.5, z=0)
+        cv.text(bx0 + 0.6, ytop - 1.15, head, fontsize=7.5, weight="bold", color=dark, va="center")
+        cv.text(bx0 + 0.6 + 0.62 * len(head) + 0.4, ytop - 1.15, f"({acct} account)", fontsize=6.5, color=INK2,
+                va="center")
+        # mini sequence with the query's attention over it
+        mw, ms, mx0, my0, mh = 1.3, 1.55, bx0 + 0.9, ytop - ch + 1.1, 1.75
+        mc = [mx0 + j * ms + mw / 2 for j in range(7)]
+        for j, c in enumerate(letters):
+            fc, ec, lw = tile_style(j)
+            box(mx0 + j * ms, my0, mw, mh, fc, ec, lw * 0.8, r=0.25)
+            cv.text(mc[j], my0 + mh / 2, c, ha="center", va="center", fontsize=7.5, family="DejaVu Sans Mono",
+                    color=INK, zorder=4)
+        base, amax = my0 + mh + 0.35, 5.3
+        cv.plot([mx0 - 0.2, mc[5] + mw / 2 + 0.2], [base, base], color=INK2, lw=0.6, zorder=2, solid_capstyle="butt")
+        for j, a in enumerate(att):
+            hh = max(a / max(att) * amax * (0.95 if max(att) < 0.5 else 1.0), 0.12)
+            cv.add_patch(plt.Rectangle((mc[j] - 0.5, base), 1.0, hh, fc=col, ec="none", zorder=3))
+        # read-out: what reaches the decision
+        ox, oy, R = 37.4, my0 + 3.6, 2.15
+        cv.text(mc[QI] + 0.2, oy + 0.9, "attention\nfrom query", ha="center", va="bottom", fontsize=6.2,
+                color=INK2, linespacing=1.0)
+        arrow((mc[QI] - 0.3, oy), (ox - R - 0.35, oy), INK2, lw=0.9, ms=6)
+        cv.add_patch(Circle((ox, oy), R, fc="white", ec=tint(col, 0.6), lw=0.9, zorder=3))
+        cv.text(ox, oy, main_l[0], ha="center", va="center", fontsize=13, family="DejaVu Sans Mono", weight="bold",
+                color=main_l[1], zorder=5)
+        spots = [(-1.15, 0.95), (1.15, 0.95), (1.15, -0.95), (-1.15, -0.95)]
+        for (g, gc, al), (dx, dy) in zip(ghosts, spots):
+            cv.text(ox + dx, oy + dy, g, ha="center", va="center", fontsize=7.5, family="DejaVu Sans Mono",
+                    color=gc, alpha=al, zorder=4)
+        cv.text(ox, oy - R - 0.75, "read out", ha="center", va="center", fontsize=6.2, color=INK2)
+        # decision, and the fix this account implies
+        dx0 = ox + R + 0.35
+        arrow((dx0, oy), (dx0 + 1.9, oy), INK2, lw=0.9, ms=6)
+        cv.text(dx0 + 2.3, oy + 0.6, "“match”", ha="left", va="center", fontsize=7.5, color=INK, weight="bold")
+        cv.text(dx0 + 7.3, oy + 0.6, "✗", ha="left", va="center", fontsize=9, color=LURE, weight="bold")
+        cv.text(dx0 + 2.3, oy - 1.2, note, ha="left", va="center", fontsize=6.2, color=INK2, linespacing=1.05)
+        fw = 0.52 * len("fix: " + fix) + 1.0
+        box(bx1 - 0.6 - fw, my0 - 0.35, fw, 1.75, tint(col, 0.22), "none", r=0.85, z=2)
+        cv.text(bx1 - 0.6 - fw / 2, my0 + 0.53, f"fix: {fix}", fontsize=6.5, color=dark, va="center", ha="center",
+                weight="bold", zorder=4)
+
+    # ---- c: which fix works (B1 cells) ------------------------------------------------------------------------
+    title(55.6, "c  Which fix works?")
+    cv.text(55.6, H * 10 - 2.6, "15 LLMs × N = 2–4; dot = cell, bar = median", fontsize=6.2, color=INK2, va="center")
+    b = S["b1"]; base_d = {(r["model"], r["n"]): r["dprime"] for r in b if r["cond"] == "baseline"}
+    ok = {k for k, v in base_d.items() if v > 0.3}
+    ax = fig.add_axes([0.825, 0.16, 0.165, 0.66])
+    rng = np.random.default_rng(1)
+    for x, (c, col, dark) in enumerate((("sharpen-top3@0.67", PREC, PREC_D), ("suppress@0.5", INTF, INTF_D))):
+        d = np.array([r["delta"] for r in b if r["cond"] == c and (r["model"], r["n"]) in ok])
+        med = np.median(d)
+        ax.bar(x, med, 0.62, color=tint(col, 0.28), zorder=1)
+        ax.scatter(x + rng.uniform(-0.2, 0.2, len(d)), d, s=6, color=col, linewidths=0, alpha=0.9, zorder=3)
+        ax.plot([x - 0.31, x + 0.31], [med, med], color=dark, lw=1.6, zorder=4, solid_capstyle="butt")
+        ax.text(x, max(d.max(), med) + 0.1, f"{med:+.2f}", ha="center", va="bottom", fontsize=7.5, color=dark,
+                weight="bold")
+        if c.startswith("suppress"):
+            ax.text(x + 0.44, med, f"{(d > 0).sum()}/{len(d)}\ncells\nimprove", ha="left", va="center", fontsize=6.2,
+                    color=INK2, linespacing=1.0)
+    ax.axhline(0, color=INK2, lw=0.8, zorder=2)
+    ax.set_xticks([0, 1], ["sharpen\nattention", "remove\ndistractors"], fontsize=6.5)
+    for t, dark in zip(ax.get_xticklabels(), (PREC_D, INTF_D)):
+        t.set_color(dark)
+    ax.tick_params(axis="x", length=0, pad=3)
+    ax.set_xlim(-0.55, 1.55); ax.set_ylim(-0.45, 2.15); ax.set_yticks([0, 1, 2])
+    ax.grid(axis="x", visible=False); ax.tick_params(axis="y", labelsize=6.5)
+    ax.set_ylabel("change in d′", fontsize=7, labelpad=1)
     save(fig, out, "fig1_overview")
 
 

@@ -58,7 +58,7 @@ We test both predictions with a common set of stimuli, thresholds and interventi
 \begin{figure}[t]
   \centering
   \includegraphics[width=\textwidth]{fig1_overview.pdf}
-  \caption{\textbf{Overview.} (a) N-back with a lure: the target is the item N back; a lure repeats the query letter at N$\pm$1. (b) Two accounts of an error. (c) Across 15 LLMs and N = 2--4, sharpening the heads that carry the task barely changes \dprime{}, while removing the letter identity of non-target items raises it substantially (medians; Section~\ref{sec:causal}).}
+  \caption{\textbf{Overview.} (a) N-back with a lure: the target is the item N back; a lure repeats the query letter at N$\pm$1. (b) Two accounts of the same false alarm: attention lands on the lure (locating), or on the target while other items' content corrupts the readout. Each implies a different fix. (c) Across 15 LLMs and N = 2--4 (dots: model$\times$N cells; bars: medians), sharpening the heads that carry the task barely changes \dprime{}, while removing the letter identity of non-target items raises it in 42 of 43 cells (Section~\ref{sec:causal}).}
   \label{fig:overview}
 \end{figure}
 
