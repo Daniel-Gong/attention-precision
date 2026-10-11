@@ -14,17 +14,17 @@ Read this first when picking the project up in a new (local) Claude Code session
 Transformers *find* the item but *misread* it. Retrieval heads locate the N-back target on most
 trials (L7), and a linear probe separates match from lure almost perfectly (L8: AUC ≈1.0 vs model's own
 0.58–0.63), so errors are readout interference, not attention imprecision. Removing distractor content
-(L5s suppression) raises d′ in 42/43 cells (median +0.60); sharpening attention does nothing (+0.04);
-ablating the located heads hurts (−0.96). Toy models agree: depth removes the decline; position margin
+(L5s suppression) raises d′ in 42/43 cells (median +0.60); sharpening attention barely helps (+0.05);
+ablating the located heads hurts (−0.93). Toy models agree: depth removes the decline; position margin
 does not predict d′ but the attention mass gap does (T2, ρ = 0.62).
 
 ## Key results (all in `results/summary.json`; `python scripts/summarize_all.py` regenerates)
 - L2 behaviour: d′ falls with N in all 15 LLMs (Qwen2.5-14B 4.28 → 1.15 over N = 1–6).
-- L3 patching → top heads; L5 sharpen ≈ 0; ablate-top10 −0.96 (39/40 negative), random ablation −0.01.
+- L3 patching → top heads; sharpen-top3 +0.05 (small but consistent, p = 0.04); ablate-top10 −0.93 (42/43 negative), random ablation +0.00.
 - L5s / B1 (paired bootstrap, 2,000 resamples): suppress@0.5 +0.60 median, random-subspace −0.03,
   target suppression −1.54. Wilcoxon p < 1e−8. Degenerate cells excluded: Pythia-70m, GPT-2 XL at N = 4.
 - L5x (Xiong et al. replication): held-out +0.11, best-in-sweep +0.12 — much smaller than ours.
-- L7: heads locate target on 88–91% of correct matches; misses with attention elsewhere 6–15%.
+- L7: heads locate target on 88–91% of correct matches; misses with attention elsewhere 7–16% (14 models).
 - L8: probe calls 86–95% of the model's own lure FAs "lure" (15 models incl. Qwen2.5-14B).
 - Toy: E1 2.67 → 2.15; E5 sigmoid/top-k flatten decline; E3b/E10 depth removes it; E9 linear attn declines;
   E6 position margin doesn't shrink with N; E7b every attention edit lowers d′.
@@ -51,11 +51,14 @@ Done 2026-10-10 (second session):
 - L3 + L8 for Qwen2.5-14B run on Modal B200 (logs/modal_l3_q14.out, logs/modal_l8_q14.out on Misha): probe AUC
   1.00 / 0.997 vs model 0.81 / 0.64; 99.8% / 95% of lure FAs called lures. In Table 3, Fig 4 and §6; medians unchanged.
 
+- Qwen2.5-14B now has every LLM study (L2, L3, L5, L5s, L7, L8, B1); runs on Modal B200, logs on Misha
+  (logs/modal_{b1_q14h,l5_q14,l7_q14}.out). The old suppression-only 14B B1 file is in results/partial/.
+  Section 7 numbers recomputed (also fixed: sharpening p was misquoted as 0.23; flattening cost 0.32;
+  whole-model temperature 19 of 30). `summarize_all.py` now dedups L5 rows (H100/Q0.5B reruns won).
+
 Still open:
-1. Optional: L5 sharpening/ablation and B1 for Qwen2.5-14B are now possible (its L3 heads exist).
-2. xiong2026superposition: arXiv lists it as COLM 2026; bib still cites the preprint.
-3. ~1.5 pages of spare main-text room remain (theory P1–P3 expansion is the main candidate).
-4. Misha checkout is behind origin and has an untracked results/summary.json that blocks `git pull`
+1. ~1.5 pages of spare main-text room remain (theory P1–P3 expansion is the main candidate).
+2. Misha checkout is behind origin and has an untracked results/summary.json that blocks `git pull`
    (move it aside first).
 
 ## Gotchas learned

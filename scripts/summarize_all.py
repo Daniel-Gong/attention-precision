@@ -230,8 +230,9 @@ def main():
                "l6_heads": l6_heads(read_jsonl(os.path.join(a.parts, "l6_heads_*.jsonl"))),
                "e10": e10(rows),
                "l3": l3(read_jsonl(os.path.join(a.parts, "l3_*.jsonl"))),
-               "l5": [{k: r.get(k) for k in ("model", "n", "arm", "k", "tau", "draw", "dprime", "hit", "fa", "auc")}
-                      for r in read_jsonl(os.path.join(a.parts, "l5_*.jsonl"))],
+               "l5": list({(r["model"], r["n"], r["arm"], r.get("k"), r.get("tau"), r.get("draw")):   # reruns win
+                           {k: r.get(k) for k in ("model", "n", "arm", "k", "tau", "draw", "dprime", "hit", "fa", "auc")}
+                           for r in read_jsonl(os.path.join(a.parts, "l5_*.jsonl"))}.values()),
                "l5s": [r for r in read_jsonl(os.path.join(a.parts, "l5s_*.jsonl")) if r.get("cond") != "xiong"],
                "l7": read_jsonl(os.path.join(a.parts, "l7_*.jsonl")),
                "l8": read_jsonl(os.path.join(a.parts, "l8_*.jsonl")),
