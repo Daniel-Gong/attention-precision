@@ -8,7 +8,7 @@
 \item {\bf Claims}
     \item[] Question: Do the main claims made in the abstract and introduction accurately reflect the paper's contributions and scope?
     \item[] Answer: \answerYes{} % Replace by \answerYes{}, \answerNo{}, or \answerNA{}.
-    \item[] Justification: The abstract and Section~\ref{sec:intro} state the four claims (decomposition, causal contrast, where precision binds, architectures); each maps to Sections~\ref{sec:theory}--\ref{sec:causal} and states its scope (15 base models up to 14B parameters, letter N-back).
+    \item[] Justification: The abstract and Section~\ref{sec:intro} state the three claims (LLMs locate the target and encode the match position, removing distractor content helps far more than sharpening attention, and attention precision binds only in a one-layer model); they map to Sections~\ref{sec:locate}, \ref{sec:causal} and \ref{sec:theory}, and the scope (15 base models up to 14B parameters, letter N-back) is stated.
     \item[] Guidelines:
     \begin{itemize}
         \item The answer \answerNA{} means that the abstract and introduction do not include the claims made in the paper.
@@ -36,7 +36,7 @@
 \item {\bf Theory assumptions and proofs}
     \item[] Question: For each theoretical result, does the paper provide the full set of assumptions and a complete (and correct) proof?
     \item[] Answer: \answerYes{} % Replace by \answerYes{}, \answerNo{}, or \answerNA{}.
-    \item[] Justification: The propositions and corollaries in Section~\ref{sec:theory} state their assumptions (Propositions 1--3: one layer, no residual stream, no MLP, alphabet-symmetric stimuli; Proposition~\ref{prop:interference}: a linear readout with additive distractor content); proofs are in Appendix~\ref{app:theory}, and Proposition~\ref{prop:depth} is given as a constructive sketch.
+    \item[] Justification: The propositions and corollaries in Sections~\ref{sec:causal} and~\ref{sec:theory} state their assumptions (Propositions~\ref{prop:mass}--\ref{prop:depth}: one layer, no residual stream, no MLP, alphabet-symmetric stimuli; Proposition~\ref{prop:interference}: a linear readout with additive distractor content); proofs are in Appendix~\ref{app:theory}, and Proposition~\ref{prop:depth} is given as a constructive sketch.
     \item[] Guidelines:
     \begin{itemize}
         \item The answer \answerNA{} means that the paper does not include theoretical results. 
@@ -139,7 +139,7 @@
 \item {\bf Broader impacts}
     \item[] Question: Does the paper discuss both potential positive societal impacts and negative societal impacts of the work performed?
     \item[] Answer: \answerYes{} % Replace by \answerYes{}, \answerNo{}, or \answerNA{}.
-    \item[] Justification: Section~\ref{sec:discussion} notes that the work is basic science on model mechanisms; better working-memory diagnosis could aid evaluation, and the interventions are analysis tools, not deployable capabilities.
+    \item[] Justification: Appendix~\ref{app:methods} notes that the work is basic science on model mechanisms; better working-memory diagnosis could aid evaluation, and the interventions are analysis tools, not deployable capabilities.
     \item[] Guidelines:
     \begin{itemize}
         \item The answer \answerNA{} means that there is no societal impact of the work performed.

@@ -1,6 +1,6 @@
 """LaTeX tables for the paper appendix, from results/summary.json.
 
-Writes paper/tables/{l2_dprime,b1_cells,l7_l8}.tex
+Writes paper/tables/{l2_dprime,b1_cells,l7_l8,l5_l5s}.tex
 Usage: python scripts/paper_tables.py
 """
 import json
@@ -65,7 +65,7 @@ def l7_l8_table():
     l7 = {(r["model"], r["n"]): r for r in S["l7"]}
     l8 = {(r["model"], r["n"]): r for r in S["l8"]}
     lines = [r"\begin{tabular}{lrrrrrrr}", r"\toprule",
-             r"& & \multicolumn{3}{c}{L7: share of misses} & \multicolumn{3}{c}{L8: match vs.\ lure} \\",
+             r"& & \multicolumn{3}{c}{share of misses} & \multicolumn{3}{c}{match vs.\ lure} \\",
              r"\cmidrule(lr){3-5}\cmidrule(lr){6-8}",
              r"Model & $N$ & elsewhere & lost later & head wrong & model AUC & probe AUC & FA called lure \\", r"\midrule"]
     for m in ORDER:
@@ -85,6 +85,51 @@ def l7_l8_table():
     open(f"{OUT}/l7_l8.tex", "w").write("\n".join(lines) + "\n")
 
 
+def l5_l5s_table():
+    """Numbers quoted in Section 5 that Fig 4 does not show: flattening the top 3 heads (tau = 2), the best
+    whole-model temperature, false-alarm and hit rates under half suppression, and removing the target's letter."""
+    t = {}
+    for r in S["l5"]:                                          # later rows win
+        if r["arm"] == "baseline":
+            t[(r["model"], r["n"], 1.0, "base")] = r["dprime"]
+        elif r["arm"] == "sharpen-top" and r["k"] == 3:
+            t[(r["model"], r["n"], r["tau"], "top3")] = r["dprime"]
+        elif r["arm"] == "sharpen-all":
+            t[(r["model"], r["n"], r["tau"], "all")] = r["dprime"]
+    s = {(r["model"], r["n"], r["cond"], r.get("alpha")): r for r in S["l5s"]}
+    lines = [r"\begin{tabular}{lrrrrrrrr}", r"\toprule",
+             r"& & \multicolumn{2}{c}{temperature} & \multicolumn{4}{c}{suppress distractor content (half)} & target \\",
+             r"\cmidrule(lr){3-4}\cmidrule(lr){5-8}",
+             r"& & top 3, $\tau{=}2$ & all heads & \multicolumn{2}{c}{false alarms} & \multicolumn{2}{c}{hits} & removed \\",
+             r"Model & $N$ & $\Delta d'$ & best $\tau$ & before & after & before & after & $\Delta d'$ \\", r"\midrule"]
+    col = {k: [] for k in ("flat", "fb", "fa", "hb", "ha", "tgt")}
+    for m in ORDER:
+        for n in (2, 3):
+            base = t.get((m, n, 1.0, "base"))
+            if base is None:
+                continue
+            flat = t[(m, n, 2.0, "top3")] - base
+            temps = {1.0: base, **{tau: d for (mm, nn, tau, arm), d in t.items() if (mm, nn, arm) == (m, n, "all")}}
+            best = max(temps, key=temps.get)
+            cells = [f"{flat:+.2f}", f"{best:g}"]
+            col["flat"].append(flat)
+            b, h = s.get((m, n, "baseline", 1.0)), s.get((m, n, "distractors", 0.5))
+            g = s.get((m, n, "target", 1.0))
+            if b and h and g:
+                cells += [f"{b['fa']:.2f}", f"{h['fa']:.2f}", f"{b['hit']:.2f}", f"{h['hit']:.2f}",
+                          f"{g['dprime'] - b['dprime']:+.2f}"]
+                for k, v in (("fb", b["fa"]), ("fa", h["fa"]), ("hb", b["hit"]), ("ha", h["hit"]),
+                             ("tgt", g["dprime"] - b["dprime"])):
+                    col[k].append(v)
+            else:
+                cells += ["--"] * 5
+            lines.append(f"{NAME[m] if n == 2 else ''} & {n} & " + " & ".join(cells) + r" \\")
+    med = lambda k, f: format(np.median(col[k]), f)
+    lines += [r"\midrule", f"median & & {med('flat', '+.2f')} & -- & {med('fb', '.2f')} & {med('fa', '.2f')} & "
+              f"{med('hb', '.2f')} & {med('ha', '.2f')} & {med('tgt', '+.2f')} \\\\", r"\bottomrule", r"\end{tabular}"]
+    open(f"{OUT}/l5_l5s.tex", "w").write("\n".join(lines) + "\n")
+
+
 if __name__ == "__main__":
-    l2_table(); b1_table(); l7_l8_table()
+    l2_table(); b1_table(); l7_l8_table(); l5_l5s_table()
     print("wrote", os.listdir(OUT))

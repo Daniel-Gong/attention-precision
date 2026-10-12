@@ -110,15 +110,15 @@ def fig2(S, out):
     ax = axs[0]
     e1 = toy_curve(S, "e1")
     series(ax, e1, C[0], "1-layer, softmax", direct=False)
-    ax.set_title("a  The decline at convergence (E1)", loc="left")
+    ax.set_title("a  One layer: d′ declines with N", loc="left")
     ax.set_xlabel("N"); ax.set_ylabel("d′ (test, 50 seeds, ± SEM)"); ax.set_ylim(0, 3.2)
     ax = axs[1]
-    for i, (tag, lab, dy) in enumerate([("e1", "softmax", -5), ("e5-ssmax", "scalable softmax", 5),
+    for i, (tag, lab, dy) in enumerate([("e1", "softmax", -3.5), ("e5-ssmax", "scalable softmax", 3.5),
                                         ("e5-topk", "top-k", -2), ("e5-sigmoid", "sigmoid", 4)]):
         a = toy_curve(S, tag)
         if a is not None:
             series(ax, a, C[i], lab, dy=dy)
-    ax.set_title("b  Normalization sets the slope (E5)", loc="left")
+    ax.set_title("b  Changing the normalization", loc="left")
     ax.set_xlabel("N"); ax.set_ylim(0, 4.2); ax.set_xlim(0.7, 7.6)
     ax = axs[2]
     rows = [(toy_curve(S, "e1"), "1 layer, no residual", C[0]), (toy_curve(S, "e3b-learned"), "2 layers + residual", C[1]),
@@ -126,7 +126,7 @@ def fig2(S, out):
     for a, lab, col in rows:
         if a is not None:
             series(ax, a, col, lab)
-    ax.set_title("c  Depth removes it (E3b, E10)", loc="left")
+    ax.set_title("c  Two layers remove the decline", loc="left")
     ax.set_xlabel("N"); ax.set_ylim(0, 8.5); ax.set_xlim(0.7, 8.2)
     for ax in axs:
         ax.set_xticks(range(1, 7))
@@ -186,7 +186,7 @@ def fig3(S, out):
             end_label(ax, a[-1, 0], a[-1, 1], lab, None, dy)
         ax.text(0.98, 0.97, "darker = larger", transform=ax.transAxes, ha="right", va="top", fontsize=6.5, color=INK2)
         ax.set_title(titles[fam], loc="left"); ax.set_xlabel("N"); ax.set_xticks(range(1, 7))
-    axs[0].set_ylabel("d′ (feedback condition)")
+    axs[0].set_ylabel("d′")
     ax = axs[3]
     lure, non = defaultdict(list), defaultdict(list)
     for r in rows:
@@ -216,21 +216,30 @@ def fig3(S, out):
 def fig4(S, out):
     fig, axs = plt.subplots(1, 3, figsize=(7.4, 2.6), gridspec_kw={"width_ratios": [1.0, 1.25, 1.25]})
     ax = axs[0]
-    parts = [("located_probe_wrong", "attended, head output wrong", C[7]),
-             ("located_probe_right", "attended, lost downstream", C[3]),
-             ("mislocated", "attention elsewhere", "#b8b7b1")]
+    parts = [("located_probe_wrong", "on target; heads' output already wrong", C[7]),
+             ("located_probe_right", "on target; right in heads, lost later", C[3]),
+             ("mislocated", "attention off target", "#b8b7b1")]
     ns = [2, 3, 4]
     dedup = {(r["model"], r["n"]): r for r in S["l7"]}          # later rows win (reused-container duplicates)
     good = [r for r in dedup.values() if "gpt2-large" not in r["model"] and r.get("split_miss")
             and r["split_miss"]["count"] < 0.9 * r["n_items"] * 0.3]
-    bottom = np.zeros(len(ns))
-    for key, lab, col in parts:
-        v = np.array([np.median([r["split_miss"][key] for r in good if r["n"] == n]) for n in ns])
-        ax.bar(ns, v, 0.62, bottom=bottom, color=col, label=lab, edgecolor="white", linewidth=1)
-        bottom += v
-    ax.set_ylim(0, 1); ax.set_xticks(ns); ax.set_xlabel("N"); ax.set_ylabel("share of misses (median model)")
-    ax.set_title("a  Misses: attention is in place (L7)", loc="left"); ax.grid(axis="x", visible=False)
-    ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.28), ncol=1, fontsize=6.5, handlelength=1)
+    # misses (left bar) next to lure false alarms (right bar) at each N, same models
+    off, w = 0.21, 0.38
+    for split, dx in (("split_miss", -off), ("split_lure_false_alarm", off)):
+        bottom = np.zeros(len(ns))
+        for key, lab, col in parts:
+            v = np.array([np.median([r[split][key] for r in good if r["n"] == n]) for n in ns])
+            ax.bar(np.array(ns) + dx, v, w, bottom=bottom, color=col, label=lab if dx < 0 else None,
+                   edgecolor="white", linewidth=1)
+            bottom += v
+    ax.set_ylim(0, 1); ax.set_xlim(1.45, 4.55)
+    ax.set_xticks([n + dx for n in ns for dx in (-off, off)], ["miss", "lure"] * len(ns), fontsize=6)
+    ax.tick_params(axis="x", length=0, pad=2)
+    for n in ns:
+        ax.text(n, -0.13, f"N = {n}", transform=ax.get_xaxis_transform(), ha="center", va="top", fontsize=7.5, color=INK)
+    ax.set_ylabel("share of errors (median model)")
+    ax.set_title("a  Attention on errors", loc="left"); ax.grid(axis="x", visible=False)
+    ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.3), ncol=1, fontsize=6.5, handlelength=1)
     for ax, n, letter in ((axs[1], 2, "b"), (axs[2], 3, "c")):
         rows = [r for r in S["l8"] if r["n"] == n]
         grid = np.linspace(0, 1, 9)
@@ -246,10 +255,10 @@ def fig4(S, out):
         ax.plot(grid, np.median(fa, 0), color=C[1], lw=2, ls="--", label="model's lure false alarms\nthe probe calls lures", zorder=3)
         mauc = np.median([r["model_auc"] for r in rows])
         ax.axhline(mauc, color=INK2, lw=1.2, ls=":", zorder=2)
-        ax.annotate(f"model's own answer, AUC {mauc:.2f}", (1.0, mauc), xytext=(0, -8), textcoords="offset points",
+        ax.annotate(f"model's preference, AUC {mauc:.2f}", (1.0, mauc), xytext=(0, -8), textcoords="offset points",
                     ha="right", fontsize=6.5, color=INK2)
         ax.set_ylim(0.0, 1.03); ax.set_xlabel("relative depth (0 = input, 1 = last layer)")
-        ax.set_title(f"{letter}  Residual-stream probe, N = {n} (L8)", loc="left")
+        ax.set_title(f"{letter}  Match vs. lure decoded, N = {n}", loc="left")
         if n == 2:
             ax.set_ylabel("AUC / share of items")
     fig.tight_layout(w_pad=1.0)
@@ -341,7 +350,7 @@ def fig6(S, out):
                 series(ax, a, col, lab, direct=False)
         a = toy_curve(S, "e1")
         series(ax, a, "#8d8c86", "1-layer attention", ls="--", direct=False)
-        ax.set_title(f"{letter}  State size {st} (E9)", loc="left"); ax.set_xlabel("N"); ax.set_xticks(range(1, 7))
+        ax.set_title(f"{letter}  State size {st}", loc="left"); ax.set_xlabel("N"); ax.set_xticks(range(1, 7))
     axs[0].set_ylabel("d′ (test, ± SEM)")
     h, l = axs[1].get_legend_handles_labels()
     fig.legend(h, l, loc="lower center", bbox_to_anchor=(0.36, -0.08), ncol=5, fontsize=6.5)
@@ -353,7 +362,7 @@ def fig6(S, out):
         ax.plot(a[:, 0], a[:, 1], color=C[i], marker="o", mec="white", mew=0.6, label=short(m))
         end_label(ax, a[-1, 0], a[-1, 1], short(m).replace("pythia-", "Pythia-"), None)
     ax.set_xscale("log"); ax.set_xlabel("training step (step 0 shown at 10²)"); ax.set_xlim(80, 6e5)
-    ax.set_title("c  N-back emerges early in Pythia (L6, N = 2)", loc="left")
+    ax.set_title("c  N-back emerges early in Pythia (N = 2)", loc="left")
     fig.tight_layout(w_pad=1.0)
     save(fig, out, "fig6_architectures_development")
 
@@ -473,7 +482,7 @@ def fig1(S, out):
 
     # ---- c: which fix works (B1 cells) ------------------------------------------------------------------------
     title(55.6, "c  Which fix works?")
-    cv.text(55.6, H * 10 - 2.6, "15 LLMs × N = 2–4; dot = cell, bar = median", fontsize=6.2, color=INK2, va="center")
+    cv.text(55.6, H * 10 - 2.6, "each dot: one model at one N; bar: median", fontsize=6.2, color=INK2, va="center")
     b = S["b1"]; base_d = {(r["model"], r["n"]): r["dprime"] for r in b if r["cond"] == "baseline"}
     ok = {k for k, v in base_d.items() if v > 0.3}
     ax = fig.add_axes([0.825, 0.16, 0.165, 0.66])
@@ -486,9 +495,6 @@ def fig1(S, out):
         ax.plot([x - 0.31, x + 0.31], [med, med], color=dark, lw=1.6, zorder=4, solid_capstyle="butt")
         ax.text(x, max(d.max(), med) + 0.1, f"{med:+.2f}", ha="center", va="bottom", fontsize=7.5, color=dark,
                 weight="bold")
-        if c.startswith("suppress"):
-            ax.text(x + 0.44, med, f"{(d > 0).sum()}/{len(d)}\ncells\nimprove", ha="left", va="center", fontsize=6.2,
-                    color=INK2, linespacing=1.0)
     ax.axhline(0, color=INK2, lw=0.8, zorder=2)
     ax.set_xticks([0, 1], ["sharpen\nattention", "remove\ndistractors"], fontsize=6.5)
     for t, dark in zip(ax.get_xticklabels(), (PREC_D, INTF_D)):
